@@ -40,6 +40,26 @@ Anything not yet decided is marked **open** rather than silently resolved.
   date that would imply false certainty (e.g. `"2020"` stays `"2020"`, not `"2020-01-01"`).
 - **US Core extensions (race/ethnicity) are modeled as demographic context**, not as clinical
   facts requiring reconciliation — no cross-checking against `patient-002`, which lacks them.
+- **Canonical-patient selection is a generic completeness score, not a hardcoded id.** Implemented
+  (Iteration 04) as: +10 for US Core profile conformance, +5 for an SSN identifier, +1 to +3 for
+  `birthDate` precision (year/month/day), +1 per extension, +1 per identifier — the highest-scoring
+  `Patient` in the bundle is canonical, every other one is an unresolved probable duplicate. This
+  operationalizes the patient-001/patient-002 reasoning above without hardcoding those literal ids.
+  **Explicitly scoped to one bundle at a time** (matches MVP scope) — this is not generic
+  multi-patient identity matching (fuzzy name/DOB matching across an unrelated population); that
+  would be a materially larger and riskier undertaking, out of scope here.
+- **`Condition`/`AllergyIntolerance` Pydantic models don't enforce the `con-3`/`ait-1` FHIR
+  invariants** they violate in this bundle — the violating resources still parse and are surfaced
+  (flagged as `invariant_violation` discrepancies) rather than rejected as unparseable. Enforcing
+  the invariant at the modeling layer would conflict with "surface the real data, never hide it."
+- **Discrepancy detection is scoped to what's explicitly cataloged in `Knowledge.md`** — entered-
+  in-error/inactive/resolved exclusion, FHIR invariant violations, missing `display`, dangling
+  references, the SNOMED/LOINC code-shape mismatch, unconfirmed verification status, and the
+  duplicate-patient link. **Deliberately does NOT** attempt to detect physiologically implausible
+  values (e.g. the entered-in-error creatinine reading) or flag "missing reference range" /
+  "missing reaction detail" as per-item issues — both would require inventing clinical thresholds
+  or treating a uniform, bundle-wide absence as if it were a distinguishing problem, which this
+  project has no authority to assert. Decided Iteration 04 (2026-08-25).
 
 ## Scope
 
@@ -78,8 +98,12 @@ Anything not yet decided is marked **open** rather than silently resolved.
   duplicate-Patient-merge logic lives inside it as `patient_reconciliation`, since "reconciliation"
   correctly names that narrower piece but not the whole module.
 
-## Still open — revisit during Phase 2
+## Still open
 
-- Exact `/patient-summary` response field names/nesting for the `excluded` bucket and the
-  "past medications" bucket — the *that* they exist is decided (above), the precise JSON shape
-  is not yet — carry into Phase 01/02 schema design.
+- ~~Exact `/patient-summary` response field names/nesting for the `excluded` bucket and the "past
+  medications" bucket~~ — resolved Iteration 04: implemented as `PatientCard.excluded` and
+  `PatientCard.medications_past` on `POST /validate`'s response (`backend/app/models/
+  patient_card.py`). No longer open.
+- Whether `POST /validate` is the final endpoint name/shape long-term, or gets renamed/split once
+  HIL/manual-mode (custom upload, edit-and-resubmit) is built — not revisited yet, MVP naming has
+  held so far.

@@ -65,6 +65,23 @@ iteration before handing back for review.
 - Backend package restructure (routers/core split from the previous iteration) re-verified as
   still working after adding the new `models/` package and `validation` router.
 
+### Phase 02 — Iteration 04
+
+- `POST /validate` on the real bundle → every one of the 18 discrepancies catalogued in
+  `Knowledge.md` present exactly once, attached to the correct resource, with the correct `kind`
+  (verified via full JSON inspection, not spot-checked): the duplicate-patient flag, both invariant
+  violations (`con-3`/`ait-1`), all four missing-`display` cases, both dangling references
+  (encounter + performer), the code/system mismatch, the unconfirmed-verification flag, and the
+  `medicationrequest-003` duplicate-link flag. `discrepancy_count: 18` cross-checked arithmetically
+  against the per-item counts.
+- **Full interactive flow re-verified in a real browser** via `claude-in-chrome`: Load → Run
+  Validation → confirmed the rendered `PatientCard` matches the API response — name/DOB/identifiers
+  header, "18 discrepancies observed" badge, the possible-duplicate panel, all seven collapsible
+  sections present with correct counts, the Excluded section auto-expanded showing all four
+  excluded items with their reasons, and (via manually expanding Conditions) confirmed a
+  non-excluded item's discrepancies render correctly alongside a clean zero-discrepancy item in the
+  same list.
+
 ## Automated coverage
 
 None yet. First candidates, once written:
@@ -74,10 +91,14 @@ None yet. First candidates, once written:
   non-Bundle body, unsupported resource type, per-field validation failures (missing required
   field, wrong type), and the happy path against the real sample bundle. Real branching logic now
   exists here, unlike the pure-passthrough `/sample-bundle`.
-- Backend, once it exists: the normalization/reconciliation pipeline — canonical-patient
-  selection, status-based exclusion bucketing, dangling-reference handling, date-precision
-  handling — these are exactly the clinical-data-safety-relevant branches from `Assumptions.md`
-  and the highest-value place for real unit tests in this project.
+- Backend: `app/clinical_normalization/` — now built and the single highest-value place for real
+  unit tests in this project (canonical-patient selection with 2+ patients and with only 1,
+  status-exclusion per resource type including the "stopped ≠ excluded" distinction, every
+  `discrepancies.py` check in isolation, the invariant-violation detection, the duplicate-patient-
+  link flag). Currently only covered end-to-end (real bundle in, full response checked) — no
+  per-function unit tests yet, and no test for a bundle with a *single* Patient (this project's
+  bundle always has two; the single-patient / no-duplicate code path is currently unverified in
+  isolation).
 - Frontend: not yet planned in detail: likely component-level tests for the button
   enable/disable wiring once there's enough interactive logic to justify the setup cost.
 

@@ -3,7 +3,9 @@ Iteration-03.md for scope."""
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.models.patient_card import PatientCard
 
 
 class ValidationIssue(BaseModel):
@@ -16,4 +18,7 @@ class ValidationIssue(BaseModel):
 class ValidationReport(BaseModel):
     valid: bool
     resource_counts: dict[str, int]
-    errors: list[ValidationIssue]
+    errors: list[ValidationIssue] = Field(default_factory=list)
+    # Iteration 04: the canonical patient's data, hierarchically bucketed with discrepancies
+    # attached — built for UI rendering. None if the bundle has no Patient resource at all.
+    patient: PatientCard | None = None

@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import Breadcrumb from "@/components/layout/Breadcrumb";
+import PatientCard from "@/components/patient-card/PatientCard";
+import type { PatientCardData } from "@/components/patient-card/types";
 
 // Iteration 02: Download Sample File, Load Sample File, and Run Validation becoming available
 // once a file is loaded. Upload Custom File / Edit Mode / Download Output are stretch (HIL mode)
 // and stay disabled.
 // Iteration 03: Run Validation now calls the real POST /validate endpoint (structural validation
 // against the backend's Pydantic models) and renders the report — no longer a placeholder.
+// Iteration 04: the report now also carries a patient-centric, discrepancy-annotated PatientCard
+// (see components/patient-card/), rendered below the structural summary.
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 const SAMPLE_BUNDLE_FILENAME = "scenario1_fhir_bundle[78].json";
 
@@ -24,6 +28,7 @@ type ValidationReport = {
   valid: boolean;
   resource_counts: Record<string, number>;
   errors: ValidationIssue[];
+  patient: PatientCardData | null;
 };
 
 async function fetchSampleBundle(): Promise<Record<string, unknown>> {
@@ -217,6 +222,8 @@ export default function PatientRecordProcessingPage() {
           )}
         </div>
       )}
+
+      {validationReport?.patient && <PatientCard patient={validationReport.patient} />}
     </div>
   );
 }

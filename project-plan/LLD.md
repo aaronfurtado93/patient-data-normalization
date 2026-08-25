@@ -129,7 +129,100 @@ built.
   unsupported resource type + a resource missing a required field → both reported in one
   response, not just the first).
 
+### `app/clinical_normalization/` — reconciliation + discrepancy detection (Iteration 04)
+
+Turns the resources `bundle_parser.py` successfully parsed into one `PatientCard` — the canonical
+patient plus everything that references it (or a flagged duplicate), bucketed by type, with
+discrepancies attached per item. See `implementation-logs/Knowledge.md` for the full data-quality
+catalog this operationalizes and `Assumptions.md` for the reasoning behind each rule.
+
+```
+app/clinical_normalization/
+├── __init__.py                # module-layout docstring — read first
+├── bundle_parser.py            # parse_bundle_entries() — moved here from routers/validation.py
+│                                 (Iteration 03) so /validate and patient_card.py share one
+│                                 per-entry parsing pass, never disagreeing about what's valid.
+├── patient_reconciliation.py    # reconcile_patients() — completeness-score canonical selection
+├── status_filters.py             # *_exclusion_reasons() — entered-in-error/inactive/resolved,
+│                                   per resource type. "stopped" MedicationRequest is NOT here —
+│                                   handled as its own bucket by patient_card.py.
+└── discrepancies.py               # missing_display, code_system_mismatch, dangling_reference,
+                                     invariant_violation (con-3/ait-1), unconfirmed_verification
+```
+
+`patient_card.py`'s `build_patient_card()` is deliberately **explicit per-resource-type blocks**,
+not one generic loop over "all resources" — more code, but each block (Encounter/Condition/
+Observation/MedicationRequest/AllergyIntolerance) is independently auditable, which matters more
+than DRY-ness for logic with real clinical-data-safety weight. Shared per-item logic (the
+duplicate-patient-link check, "does this belong to this patient at all") is factored into two small
+closures (`linked_patient_discrepancy`, `belongs_to_this_patient`) rather than duplicated six times.
+
+**Canonical-patient selection** (`patient_reconciliation.completeness_score`): +10 US Core profile,
++5 SSN identifier, +1..+3 `birthDate` precision, +1 per extension, +1 per identifier — highest
+score wins, every other `Patient` in the bundle becomes a `possible_duplicates` entry. See
+`Assumptions.md` for why this is scoped to one bundle at a time, not generic identity matching.
+
+**MedicationRequest is the one three-way bucket**: `excluded` (entered-in-error) /
+`medications_past` (`status: stopped`) / `medications_active` (everything else) — every other
+resource type is a simple two-way excluded/current-fact split.
+
+**A resource whose subject points at the canonical patient's flagged duplicate** (only
+`medicationrequest-003` in this bundle) still appears in the canonical patient's card, in its
+normal bucket (active/past/excluded, same rules as any other item), but carries an
+`unresolved_duplicate_patient_link` discrepancy — per `Assumptions.md`'s Phase 00 decision on
+`medicationrequest-003` specifically, generalized to any resource type that might do this.
+
+**Deliberately not detected** (see `Assumptions.md` for the reasoning): physiologically implausible
+values, "no reference range available," "no reaction detail available" — these would require
+inventing clinical thresholds or flagging a uniform bundle-wide absence as if it were
+instance-specific, neither of which this project has grounds to assert.
+
+### `POST /validate` response, updated (Iteration 04)
+
+Same `valid`/`resource_counts`/`errors` as Iteration 03, plus:
+
+- **`patient: PatientCard | None`** — `None` only if the bundle has no `Patient` resource at all.
+  Built from whatever parsed successfully (structural errors are already reported separately in
+  `errors`; unparseable entries simply don't appear in the card).
+
+`PatientCard` shape (`app/models/patient_card.py`):
+- `patient_id`, `name`, `birth_date`, `identifiers` — canonical patient's demographics.
+- `possible_duplicates: list[PossibleDuplicatePatient]` — every other `Patient` resource found.
+- `encounters` / `conditions` / `observations` / `medications_active` / `medications_past` /
+  `allergies`: `list[ResourceCardItem]`, current-fact only.
+- `excluded: list[ResourceCardItem]` — every excluded item across every type, in one place, each
+  self-describing (`resource_type`, `excluded: true`, its exclusion-reason discrepancies).
+- `discrepancy_count: int` — every discrepancy across every item, plus one per possible duplicate.
+
+`ResourceCardItem`: `resource_type`, `resource_id`, `summary` (best-effort human-readable label —
+`code.text` → `code.coding[0].display` → `code.coding[0].code` → a generic fallback like
+`"Condition"`, never guessed further), `status`, `excluded: bool`, `discrepancies:
+list[Discrepancy]` (`kind` + `message`).
+
+**Verified against the real bundle:** every one of the 18 discrepancies documented in
+`Knowledge.md` shows up exactly once, attached to the correct resource, with the correct `kind` —
+see `Iteration-04.md` for the full verification record (structural JSON check + a real
+browser-driven click-through).
+
 ## Frontend
+
+### `components/patient-card/` (Iteration 04)
+
+- `types.ts` — TypeScript mirror of `app/models/patient_card.py`. No shared-schema codegen at this
+  project's scale; kept in sync by hand, flagged here so a future backend field change is easy to
+  remember to mirror.
+- `ResourceSection.tsx` — reusable collapsible (`<details>`/`<summary>`) list for one bucket;
+  renders nothing if empty. Excluded items get a red-tinted row + "Excluded — not shown as current
+  fact" label; every item's `discrepancies` render as `⚠ message` lines. The Excluded section opens
+  by default (`defaultOpen`) — the whole point of that bucket is to not require hunting for it.
+- `PatientCard.tsx` — the card itself: name/DOB/identifiers header, a discrepancy-count badge
+  (only shown if > 0), the possible-duplicate panel (only shown if any), then one `ResourceSection`
+  per bucket in a fixed order (Encounters, Conditions, Active Medications, Past Medications,
+  Allergies, Observations, Excluded).
+
+Rendered on `/patient-record-processing` below the existing structural-validation summary
+(Iteration 03's valid/invalid badge + counts) — both stay visible; they answer different questions
+("does it parse" vs. "what does the patient's record actually look like, with issues surfaced").
 
 ### Layout (Iteration 01)
 
@@ -173,9 +266,7 @@ built.
 
 ## Not yet designed
 
-- `/patient-summary` (or equivalent) — the actual normalization/reconciliation pipeline and its
-  response shape. Still open per `Assumptions.md`; will get its own LLD section once that iteration
-  starts.
-- The actual normalization/reconciliation pipeline that would run *after* structural validation
-  passes — `/validate` only confirms the data parses; nothing yet acts on canonical-patient
-  selection, status-based exclusion, or duplicate detection.
+- HIL/manual-mode: custom bundle upload, in-browser editing, download-output. Stretch scope, UI
+  buttons exist as disabled placeholders; nothing behind them yet.
+- Whether `/validate`'s name/shape survives once HIL mode needs to resubmit an *edited* patient
+  card rather than just validating a freshly-uploaded bundle — noted as open in `Assumptions.md`.
