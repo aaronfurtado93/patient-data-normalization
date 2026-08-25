@@ -63,6 +63,8 @@ with step-by-step usage instructions for everything below.
   with no backend round trip needed just to "load" it.
 - Loading any new file clears all previous results and re-enables Validation Mode.
 
+Additional Sample test files can be found at: [backend/tests/fixtures](backend/tests/fixtures)
+
 ### Validation Mode
 
 - **Default (auto-mode, MVP)** is read-only evaluation. Every distinct `Patient` resource always
