@@ -63,3 +63,103 @@ profiles (US Core, in this bundle's case).
 | `generalPractitioner`            | absent                       | absent                                                                   |
 | `managingOrganization`           | absent                       | absent                                                                   |
 | **`link`**                       | **absent**                   | **absent**                                                               |
+
+---
+
+## Condition, Observation, MedicationRequest, AllergyIntolerance: bundle vs FHIR R4 spec
+
+Follow-up flagged in a previous pass, now done against the actual shipped bundle
+(`inputdata/scenario1_fhir_bundle[78].json`, verified 2026-08-25 — matches the `Knowledge.md`
+catalog exactly on every previously-documented item; no drift between working copy and catalog).
+
+### Condition
+
+Reference: [hl7.org/fhir/R4/condition.html](https://www.hl7.org/fhir/R4/condition.html)
+
+- Invariant **`con-3`**: `Condition.clinicalStatus` SHALL NOT be present if `verificationStatus` is
+  `entered-in-error`. **`condition-002` (asthma) violates this** — it has both `clinicalStatus:
+  inactive` and `verificationStatus: entered-in-error` at once. This isn't just a data-quality style
+  issue (missing display, dangling ref) — it's the bundle itself being non-conformant to a FHIR R4
+  invariant. Reinforces the existing exclusion rule (never trust `clinicalStatus` once
+  `verificationStatus` says `entered-in-error`) but the *reason* is now precise: the source data
+  contradicts the spec's own constraint, so `clinicalStatus` on that resource can't be treated as
+  meaningful at all.
+- None of the three conditions populate `category` (spec allows 0..*, but the FHIR US Core-style
+  convention of tagging `problem-list-item` vs `encounter-diagnosis` is absent everywhere) —
+  spec-legal, but means the app can't distinguish "problem list" conditions from
+  "diagnosed-at-this-encounter" ones by category; would need to infer from context if surfaced.
+- `severity`, `bodySite`, `stage`, `evidence`, `note`, `recordedDate`, `recorder`, `asserter` — absent
+  on all three, all spec-legal (0..* / 0..1).
+- `condition-001` is the "clean" baseline: full clinicalStatus+verificationStatus, coding with
+  display, valid `encounter` reference, full-precision `onsetDateTime`.
+
+### Observation
+
+Reference: [hl7.org/fhir/R4/observation.html](https://www.hl7.org/fhir/R4/observation.html)
+
+- `status` is 1..1 required-binding; `entered-in-error` (used by `observation-004`) is itself a
+  **legal** value in that binding — its exclusion from "current fact" is a business rule this app
+  applies, not a spec violation the source data commits (unlike the Condition/AllergyIntolerance
+  invariant hits above).
+- `effectiveDateTime` uses the FHIR `dateTime` type, which permits the same partial precision as
+  `date` (`YYYY`, `YYYY-MM`, `YYYY-MM-DD`, or full timestamp). `observation-002`'s `"2020"` is
+  spec-valid year-only precision, not malformed — same handling as `Patient.birthDate` partial
+  dates.
+- Only `observation-001` (BP panel) populates `category`; the other three don't. Spec-legal (0..*),
+  but means category-based grouping (e.g. "vital signs" vs "labs") can't be done consistently across
+  all observations in this bundle.
+- `referenceRange`, `interpretation`, `bodySite`, `method`, `device` — absent on all four,
+  spec-legal. No observation in this bundle carries a normal/abnormal interpretation flag — if the
+  snapshot wants to indicate "this value is out of range," it would have to compute that itself, not
+  read it off the resource.
+- `observation-003`'s `performer` reference to `Practitioner/practitioner-999` isn't just a dangling
+  reference to a missing *entry* — there is no `Practitioner` resource of any kind anywhere in this
+  17-entry bundle. Worth stating precisely: this is "resource type entirely absent," not "one
+  specific practitioner record happens to be missing."
+
+### MedicationRequest
+
+Reference: [hl7.org/fhir/R4/medicationrequest.html](https://www.hl7.org/fhir/R4/medicationrequest.html)
+
+- `status` required-binding values seen: `active` (001), `stopped` (002), `active` (003).
+  **`stopped` is a legal, intentional status** — distinct in kind from `entered-in-error`. It
+  represents real prescribing history (a medication that was deliberately discontinued), not a
+  data-quality defect. See `Assumptions.md` — this is now modeled as its own "past medications"
+  bucket, separate from both the active-meds list and the entered-in-error/inactive exclusion
+  bucket.
+- `authoredOn` is `dateTime` type; `medicationrequest-002`'s `"2022"` is spec-valid year-only
+  precision.
+- **No `MedicationRequest` in the bundle populates `requester`** (0..1, who prescribed it) —
+  spec-legal absence, but means prescriber attribution is unanswerable from this data for all three
+  medications, not just the ones with other gaps. Worth surfacing as a completeness note if the
+  snapshot shows medications with any "prescribed by" framing.
+- `medicationrequest-002` and `-003` have no `encounter` link (0..1, spec-legal); only `-001` ties
+  back to a specific visit.
+
+### AllergyIntolerance
+
+Reference: [hl7.org/fhir/R4/allergyintolerance.html](https://www.hl7.org/fhir/R4/allergyintolerance.html)
+
+- Invariant **`ait-1`**: `AllergyIntolerance.clinicalStatus` SHALL NOT be present if
+  `verificationStatus` is `entered-in-error`. **`allergyintolerance-002` (latex) violates this** —
+  same pattern as `condition-002`'s `con-3` violation above. Two independent invariant violations of
+  the identical shape (a resolved/inactive `clinicalStatus` co-occurring with an
+  `entered-in-error` `verificationStatus`) across two different resource types is worth calling out
+  as a *pattern* in this synthetic bundle, not two unrelated one-offs — it's exactly the shape the
+  exclusion-bucket rule exists to catch, and the bundle author appears to have deliberately
+  constructed both cases the same way.
+- **No `AllergyIntolerance` in the bundle populates `reaction`** (0..*, manifestation/severity of the
+  allergic reaction itself) — spec-legal absence, but means none of the three allergies (including
+  the confirmed, high-criticality penicillin one) carry any detail on what the reaction actually
+  is/was. Worth a completeness note per allergy rather than silence, per the "say so rather than
+  hiding it" framing already used elsewhere.
+- `type` (allergy vs. intolerance) and `category` (food/medication/environment/biologic) — absent on
+  all three, spec-legal.
+- **`allergyintolerance-001` (Penicillin): `system` is `http://snomed.info/sct` but `code` is
+  `"7980-2"`.** That digit-dash-digit shape matches the LOINC codes used elsewhere in this bundle
+  (`4548-4`, `8480-6`, `8462-4`), not a SNOMED CT SCTID, which is normally a longer pure-numeric
+  string — consistent with the other two allergy codes in this same bundle (`300916003`,
+  `91936005`). This reads as a **system/code mismatch in the source data**, not a missing-display
+  case — new issue category, see `Knowledge.md` catalog update. Per `Assumptions.md`: shown as-is,
+  flagged as a data-quality issue, not corrected or reinterpreted, and the code is not treated as
+  invalidating the (present) `display: "Penicillin"` value that ships with it.
