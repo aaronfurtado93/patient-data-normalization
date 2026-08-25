@@ -28,9 +28,9 @@ Docker Compose (see `project-plan/Architecture.md` and `project-plan/HLD.md`).
 
 # Setup and Run Instructions
 
-> Scaffolding in progress (Phase 01) — this section documents the target run method per
-> `project-plan/Assumptions.md`; it will be validated end-to-end as the `docker-compose.yml` and
-> service Dockerfiles land, and this note will be removed once confirmed working.
+> Phase 01 scaffolding: both services are a minimal runnable skeleton right now — a health-check
+> backend and a placeholder frontend page that confirms it can reach the backend. No normalization
+> pipeline or snapshot UI yet; that's Phase 02.
 
 **Prerequisites:** Docker and Docker Compose. No other local tooling (Python/Node versions, etc.)
 is required to run the app — the brief's "if we cannot run it, we cannot evaluate it" constraint is
@@ -43,12 +43,11 @@ docker compose up
 
 This starts both services:
 
-- **Backend** — FastAPI/uvicorn, loads `inputdata/scenario1_fhir_bundle[78].json` once at startup
-  and serves the `/patient-summary` evaluation endpoint.
-- **Frontend** — Next.js app, fetches from the backend and renders the patient snapshot.
+- **Backend** — FastAPI/uvicorn at **http://localhost:8010** (`/health`).
+- **Frontend** — Next.js app at **http://localhost:3000**.
 
-Once both are up, open the frontend in a browser (port and exact URL to be confirmed once the
-Compose file is in place — see `project-plan/HLD.md`).
+> Backend is mapped to host port `8010`, not `8000` — `8000` is commonly taken by other local dev
+> servers, so this avoids a default collision. Container-internal port is still `8000`.
 
 ```bash
 docker compose down

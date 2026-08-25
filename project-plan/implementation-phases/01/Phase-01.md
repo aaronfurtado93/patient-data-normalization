@@ -7,24 +7,32 @@ logic is written in this phase — that starts in Phase 02, informed by the HLD/
 ## Goals
 
 - [x] `README.md` — Project Overview and Setup/Run Instructions sections populated.
-- [ ] `HLD.md` — high-level architecture (system context, component breakdown, data flow for
-      auto-mode), with Mermaid diagrams. **Drafted this iteration — pending Aaron's review.**
-- [ ] `LLD.md` — low-level design (module layout, `/patient-summary` response schema, Pydantic model
-      shapes) — deferred until HLD is confirmed, since LLD depends on HLD decisions holding.
-- [ ] `docker-compose.yml` + backend/frontend Dockerfiles — runnable skeleton per
-      `project-plan/Architecture.md` (FastAPI/uvicorn + Next.js/TS/React).
-- [ ] Backend project shell — FastAPI app structure (no normalization logic yet), health-check
-      endpoint to confirm the container runs.
-- [ ] Frontend project shell — Next.js app structure, stub page, confirms it can reach the backend.
+- [x] `HLD.md` — kept intentionally light per feedback: system context + Phase 01 scope only, no
+      component/module/response-shape design (that's real Phase 02 work, done against actual code).
+- [x] `docker-compose.yml` + backend/frontend Dockerfiles — runnable skeleton, verified end-to-end
+      (`docker compose up`, backend `/health` returns 200, frontend page loads and reaches backend).
+      Backend host port is `8010` (not `8000`) — avoids a local dev-server collision on this
+      machine; container-internal port is still `8000`.
+- [x] Backend project shell — FastAPI app, `/health` endpoint only, no normalization logic.
+- [x] Frontend project shell — Next.js (app router, TS), one placeholder page that fetches
+      `/health` on load to prove connectivity.
+- [ ] `LLD.md` — deferred to Phase 02, designed against real normalization code rather than
+      speculatively (this itself was a course-correction from the original sequencing below).
 - [ ] `TestPlan.md` — testing strategy stub (still open from Phase 00, not yet started).
 
-## Sequencing
+## Sequencing (revised)
 
-1. Docs first (README, HLD) — this iteration.
-2. HLD review/feedback from Aaron before LLD or actual scaffolding code, since LLD and the
-   Compose/service shells depend on HLD decisions (response shape direction, module boundaries).
-3. LLD once HLD is confirmed.
-4. Docker Compose + backend/frontend skeletons, informed by LLD.
+Original plan below sequenced HLD → review → LLD → scaffolding. Feedback after the first HLD draft
+(too dense, don't overengineer FE/BE yet) changed this: HLD got trimmed instead of extended, and the
+runnable skeleton was built directly rather than waiting on LLD, since LLD has nothing real to
+design against until Phase 02's normalization pipeline exists. Kept here for the record rather than
+rewritten silently.
+
+1. ~~Docs first (README, HLD)~~ — done, HLD later trimmed per feedback.
+2. ~~HLD review/feedback before LLD or scaffolding code~~ — superseded: scaffolding built directly,
+   LLD pushed to Phase 02.
+3. ~~LLD once HLD confirmed~~ — deferred to Phase 02.
+4. Docker Compose + backend/frontend skeletons — done this iteration, verified runnable.
 
 ## Notes
 
