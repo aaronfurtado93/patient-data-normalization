@@ -181,9 +181,11 @@ instance-specific, neither of which this project has grounds to assert.
 
 Same `valid`/`resource_counts`/`errors` as Iteration 03, plus:
 
-- **`patient: PatientCard | None`** — `None` only if the bundle has no `Patient` resource at all.
-  Built from whatever parsed successfully (structural errors are already reported separately in
-  `errors`; unparseable entries simply don't appear in the card).
+- **`patient: PatientCard | None`** (superseded by `patients: list[PatientCard]` in Iteration 06 —
+  see below; kept here as the historical record of this field's first shape) — `None` only if the
+  bundle has no `Patient` resource at all. Built from whatever parsed successfully (structural
+  errors are already reported separately in `errors`; unparseable entries simply don't appear in
+  the card).
 
 `PatientCard` shape (`app/models/patient_card.py`):
 - `patient_id`, `name`, `birth_date`, `identifiers` — canonical patient's demographics.
@@ -521,17 +523,28 @@ it stops shadowing `frontend/lib/`. See `Iteration-07.md` Step 6 for the full no
       a messy sample bundle would.
     - `event.target.value` is reset to `""` after reading the file, so re-selecting the same
       filename still fires `onChange` (otherwise the browser treats it as no change).
-  - **Edit Mode / Download Output**: still permanently `disabled`, styled distinctly
-    (`stretchButtonClass`) — the remaining HIL-mode stretch goals per `Assumptions.md`.
-  - **Validation Mode toggle**: `<select disabled>`, `Default` / `HIL (Coming Soon)` — present but
-    inert. Note: Upload Custom File works today under "Default" mode — `/validate` doesn't
-    currently distinguish a mode at all, so an uploaded bundle is validated identically to the
-    sample bundle. This toggle governs the *edit-in-place* HIL capability specifically, not
-    whether upload/validate works.
+  - **Validation Mode toggle, Merge, and Download Output**: superseded by Iteration 07 — see the
+    "HIL merge process" section above for the current, real behavior (controlled `<select>` that
+    locks after Run Validation; the merge icon/`MergeView`/`Reconcile and Apply Merge` flow;
+    `handleDownloadOutput()` gated to HIL mode). This paragraph is kept only as a record of the
+    Iteration 05 state (mode toggle inert, Download Output permanently disabled) it replaced —
+    don't treat it as current. Note that Upload Custom File itself was never mode-gated: `/validate`
+    doesn't distinguish a mode server-side at all, so an uploaded bundle is validated identically
+    regardless of which mode is selected — the mode only governs which *frontend* actions
+    (merge/download) are offered.
 
 ## Not yet designed
 
-- HIL/manual-mode: custom bundle upload, in-browser editing, download-output. Stretch scope, UI
-  buttons exist as disabled placeholders; nothing behind them yet.
-- Whether `/validate`'s name/shape survives once HIL mode needs to resubmit an *edited* patient
-  card rather than just validating a freshly-uploaded bundle — noted as open in `Assumptions.md`.
+- **In-browser field-level editing** ("expand sections to correct/complete data by hand," per
+  `ProjectPlan.md`'s stretch goal) — the HIL merge process covers *combining* two patients'
+  existing data, but not free-form editing of a single field's value beyond what a merge selection
+  already exposes (name/birthDate/identifier choice between A and B). No UI or endpoint for this
+  yet.
+- Whether `/validate`'s name/shape survives long-term once/if editing above is built — noted as
+  open in `Assumptions.md`.
+- Automated test coverage (unit tests for `clinical_normalization/`, endpoint tests for
+  `/validate`/`/reconcile`) — see `TestPlan.md` → "Automated coverage" for what exists today
+  (fixtures only, no test runner wired up yet) and the highest-value candidates once one is.
+- The orphaned/subject-less resource gap documented in `Assumptions.md` → "Still open": such a
+  resource is currently absent from every `PatientCard` with no trace at all, which the project's
+  own "never silently drop" rule argues should change.
