@@ -343,6 +343,81 @@ side's actual data — chen-1 has no medication, chen-2 has no encounter/observa
 fixture defines), and correct live updates to the center pane when unchecking an item and when
 switching a demographic radio — both changes reflected immediately and correctly.
 
+**Step 3: "Reconcile and Apply Merge" — actually applies the merge (`POST /reconcile`).**
+
+Two new backend pieces, per Aaron's request to "expose it via endpoint":
+- `app/services/validation_service.py` — the `/validate` pipeline (structural checks →
+  `parse_bundle_entries` → `build_patient_cards`) factored out of the router into
+  `run_validation(bundle)`, so it can be called from more than one route without duplicating logic.
+- `app/routers/reconcile.py` — `POST /reconcile`, a thin route calling the same
+  `run_validation()`. Kept as its own named endpoint rather than just reusing `/validate` directly,
+  so the two intents (raw upload validation vs. re-validating a HIL merge result) stay
+  distinguishable in the API even though today they're functionally identical — a natural seam if
+  reconciliation-specific checks are ever needed later. `routers/validation.py` is now a two-line
+  wrapper around the same shared function.
+
+**Why the frontend builds the merged bundle, not the backend:** the backend is stateless (per
+`Assumptions.md`) — it never retains the bundle between requests, and `PatientCardData`/
+`ResourceCardItem` (what the UI holds) are display projections, not full FHIR resources. The
+*original* raw bundle (`loadedBundle` in `page.tsx`) is the only place both sides' complete
+resource content still exists, so `frontend/lib/reconcile.ts`'s `buildReconciledBundle()` runs
+client-side:
+- Merged Patient keeps **A's id**; based on A's raw resource. Only the three fields the UI exposes
+  (name, birthDate, identifier) can be swapped to B's value — gender/telecom/address/meta/
+  extensions always stay A's, since there's no per-field control for them yet. A real, stated
+  limitation, not a silent guess.
+- B's own Patient resource is dropped entirely from the result.
+- Every resource unrelated to A or B is carried through unchanged.
+- A resource belonging to A or B is kept **only if its checkbox was checked**; a kept B-subject
+  resource has its `subject`/`patient` reference rewritten to A's id. An unchecked resource is
+  **removed from the bundle**, not just hidden — the checklist is the actual final say on bundle
+  contents, so unchecking something the user simply didn't want (not just a "duplicate") also drops
+  it. Flagged explicitly in `Iteration-07.md` since it's a real, broader-than-"just dedup" effect.
+
+`page.tsx`'s `handleApplyMerge()` builds the bundle, POSTs it to `/reconcile`, and on success
+**replaces both `loadedBundle` and `validationReport`** with the response — this is what makes
+"Patient Records on UI... updated with the correct completeness score and discrepancies" (Aaron's
+requirement) hold for every card, not just the merged one: the whole bundle is re-validated fresh,
+so unrelated patients' numbers are recomputed too (and, since nothing about them changed, come back
+identical — confirmed, not assumed, in verification below). On failure, the view stays open with an
+inline error (`applyError` prop) rather than closing into a page-level banner that would be hidden
+behind the modal overlay.
+
+Verified in a real browser, full round trip on `three_patients_partially_valid_bundle.json`
+(the two matching Wei Chen cards): default-selection merge applied → confirmation message shown,
+structural summary correctly dropped to 2 patients (was 3) with every other resource count
+preserved, merged card at **60% complete / 2 discrepancies** (hand-verified: 3 of 5 items clean,
+matches exactly) with no duplicate panel left (only one Wei Chen remains), and Yusuf Ibrahim's card
+**completely unchanged** (still 80%/3 discrepancies) — confirming the merge only touched its
+target pair. `/reconcile`'s error path (network failure, non-2xx) is implemented but not yet
+exercised live this step — same shape as `/validate`'s already-verified error handling, low risk,
+noted rather than silently assumed.
+
+**A real second-order effect, confirmed by testing it, not assumed:** applying a merge with an item
+unchecked can make an *unrelated, still-checked* item's own reference go dangling — unchecking
+chen-1's Encounter left `tp-partial-condition-chen1`'s `encounter` reference pointing at a resource
+no longer in the bundle, and the backend correctly flagged this as a new `dangling_reference`
+discrepancy on that condition. My own quick hand-prediction of the resulting discrepancy count
+missed this and was wrong; replaying the exact `/reconcile` call directly against the backend
+caught the discrepancy and confirmed the UI's number was actually right. See `TestPlan.md` for the
+full verification. This is a genuine argument for why the merge always re-runs the complete
+backend pipeline rather than trying to approximate the result client-side — selections can have
+consequences beyond the item touched.
+
+**Step 4: warning marker on collapsed accordion sections.** Aaron's quality-of-life observation:
+collapsed `ResourceSection`s gave no hint whether anything inside needed attention. Fixed in
+`ResourceSection.tsx` alone — `discrepancyCount` is `items.reduce`d over every item's
+`discrepancies.length` and shown on the `<summary>` itself as `⚠ N discrepanc{y,ies}` (singular/
+plural handled), same visual idiom as the per-item `⚠ N` badges already used in `MergeView.tsx`'s
+checklist, so it reads as one consistent pattern rather than a new one. No backend change — this
+is purely a display computation over data already present in `ResourceCardItem.discrepancies`.
+
+Verified in a real browser against the real bundle's two-patient response: sections with zero
+discrepancies (Encounters, Active Medications, Past Medications) show no marker; sections with
+discrepancies show the correct count — Conditions ⚠2, Allergies ⚠3, Observations ⚠2, Excluded ⚠8
+(sums to the already-verified 18-discrepancy total for this bundle) — and correct singular grammar
+on patient-002's card (`⚠ 1 discrepancy`, not "discrepancies").
+
 ### Layout (Iteration 01)
 
 - `AppShell` (client component, holds sidebar open/closed state) → composes `Header` + `Sidebar` +

@@ -228,6 +228,51 @@ Verified in a real browser (`claude-in-chrome`) using `three_patients_partially_
   re-checked, DOB radio back to defaulting on A), proving the `key`-forced remount actually resets
   state for a genuinely different pair rather than carrying over stale selections.
 
+### Phase 02 — Iteration 07, step 3: Reconcile and Apply Merge
+
+Full round trip verified in a real browser (`claude-in-chrome`) on
+`three_patients_partially_valid_bundle.json` (the two matching Wei Chen cards, default selections
+— nothing unchecked, both demographics left on A):
+
+- `POST /validate` and `POST /reconcile` re-confirmed identical for the same input via `curl`
+  before any frontend testing (both return `cards: 1, completeness: 100` for
+  `fully_valid_bundle.json`) — proves the factored-out `run_validation()` behaves the same from
+  either route.
+- Clicked "Reconcile and Apply Merge": confirmation message shown; structural summary correctly
+  dropped from 3 to 2 patients with every other resource count preserved (nothing silently lost);
+  merged Wei Chen card at 60% complete / 2 discrepancies (hand-verified: 3 of 5 items clean,
+  matches exactly); no duplicate panel remains on the merged card; **Yusuf Ibrahim's card
+  confirmed completely unchanged** (still 80%/3 discrepancies) — the merge only touched its target
+  pair, re-validating the whole bundle didn't perturb an unrelated patient's numbers.
+- A real bug was caught live during this step, unrelated to the code I wrote: a stray trailing `/`
+  appeared in `validation_service.py` on disk mid-session (same class of accidental corruption seen
+  once before in `SKILL.md`) — confirmed it crashed the backend's reload with a `SyntaxError`
+  (checked the logs to be sure, not assumed), fixed it, confirmed clean recovery before continuing.
+
+**Unchecked-item case, also verified**: reopened the merge view, unchecked chen-1's Encounter,
+applied. UI showed 50% complete / **3** discrepancies on the merged card — didn't match my own
+quick hand-prediction (I expected 2), so rather than trust either the UI or my arithmetic, replayed
+the exact same reconcile call directly against the backend (Python script reconstructing the same
+bundle `lib/reconcile.ts` would have built, POSTed to `/reconcile`). **The UI was right, my
+hand-prediction was wrong**: unchecking the Encounter orphaned `tp-partial-condition-chen1`'s
+`encounter` reference (it pointed at the now-dropped Encounter) — the backend correctly flagged
+this as a **new dangling-reference discrepancy**, on top of that condition's pre-existing
+missing-display one. This is real, valuable confirmation of the design: a merge selection can have
+second-order effects (orphaning a reference) that only the actual backend pipeline catches
+correctly — client-side approximation would have missed it, same as my own hand-check did.
+
+Not yet tested: `/reconcile`'s error path (network failure / non-2xx) in-browser — the code path
+exists (`applyMergeError` state, inline error display in `MergeView`) but wasn't exercised live
+this step.
+
+### Phase 02 — Iteration 07, step 4: section-level discrepancy warning
+
+Verified in a real browser against the real bundle's two-patient response (patient-001/
+patient-002): sections with zero discrepancies show no marker on the collapsed summary; sections
+with discrepancies show the correct count — Conditions ⚠2, Allergies ⚠3, Observations ⚠2,
+Excluded ⚠8 (matches the already-verified 18-discrepancy total), and correct singular/plural
+grammar (patient-002's "Active Medications" shows "⚠ 1 discrepancy").
+
 ## Automated coverage
 
 None yet. First candidates, once written:

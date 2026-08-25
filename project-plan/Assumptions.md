@@ -105,6 +105,28 @@ Anything not yet decided is marked **open** rather than silently resolved.
   "missing reaction detail" as per-item issues — both would require inventing clinical thresholds
   or treating a uniform, bundle-wide absence as if it were a distinguishing problem, which this
   project has no authority to assert. Decided Iteration 04 (2026-08-25).
+- **Applying a HIL merge ("Reconcile and Apply Merge") is a real, in-memory data-mutating
+  operation** (Iteration 07, step 3) — it is not undoable within the app once clicked, only by
+  reloading the original file. Still bounded, though: nothing is written to disk or persisted
+  server-side (the backend stays stateless per the Scope section below); only the browser's
+  in-memory `loadedBundle` changes, and reloading the sample/uploading a fresh file fully discards
+  it. What actually happens:
+  - The merged `Patient` keeps the LHS card's id ("A" — the card the merge icon was clicked from);
+    the RHS ("B") `Patient` resource is dropped entirely. Only the three demographic fields the
+    compare view exposes (name, birthDate, identifier) are chooseable between A/B — everything else
+    on the Patient resource (gender, telecom, address, `meta`, extensions) silently keeps A's value
+    regardless of B's, since there's no per-field control for those yet. A real, current UI
+    limitation, not an inferred "A is always more correct" judgment.
+  - **A resource is kept in the merged record if and only if its checkbox was checked** in the
+    compare view — this is broader than "just dedup": unchecking *any* item (not only ones that
+    look like a duplicate of something on the other side) permanently drops it from the result.
+    The checklist is the actual final say on what survives, not merely a preview annotation.
+  - `identifiers` is an all-or-nothing choice between A's whole list and B's whole list — no
+    per-identifier merging (e.g. can't currently keep A's SSN and B's MRN together in one choice).
+  - Re-validation after applying runs the exact same pipeline (`services.validation_service.
+    run_validation`) as any other bundle — **every** patient card on screen is recomputed from the
+    resulting bundle, not just the merged one, so unrelated patients' completeness/discrepancy
+    numbers are confirmed unchanged rather than left stale.
 
 ## Scope
 

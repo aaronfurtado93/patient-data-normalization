@@ -5,11 +5,13 @@ import type { PatientCardData, ResourceCardItem } from "./types";
 // | Patient B (RHS). Per Aaron's spec. Deliberately does NOT attempt to pair up resources that
 // might represent the same clinical fact across the two patients (e.g. two hypertension
 // Conditions with different ids) — each side lists its own items independently; the center pane
-// is simply the union of whatever's checked on either side. No backend call, no persistence, no
-// actual bundle mutation — this is a preview/selection UI only. Applying/downloading a merge
-// result, and any dedup of the resulting preview, is explicitly deferred ("cleaning up of data in
-// a later step" — Aaron's words) — the disabled "Apply Merge" button below reflects that boundary
-// visibly in the UI, not just in code comments.
+// is simply the union of whatever's checked on either side.
+// Iteration 07, step 3: "Reconcile and Apply Merge" is now real. This component only reports the
+// reviewer's selections via onApply — it doesn't build the merged bundle or call the backend
+// itself (page.tsx owns loadedBundle, so bundle construction + the POST /reconcile call happen
+// there; see lib/reconcile.ts). Any dedup of the resulting preview is still deferred ("cleaning up
+// of data in a later step" — Aaron's words) — this step is about the merge actually taking effect,
+// not about the result being clean.
 
 type DemographicField = "name" | "birth_date" | "identifiers";
 const DEMOGRAPHIC_FIELDS: { key: DemographicField; label: string }[] = [
@@ -60,13 +62,23 @@ function buildInitialSelection(patientA: PatientCardData, patientB: PatientCardD
   return selected;
 }
 
+export type MergeSelections = {
+  patientAId: string;
+  patientBId: string;
+  demographicChoice: Record<DemographicField, "A" | "B">;
+  selectedItemKeys: Set<string>;
+};
+
 type MergeViewProps = {
   patientA: PatientCardData;
   patientB: PatientCardData;
   onClose: () => void;
+  onApply: (selections: MergeSelections) => void;
+  applying: boolean;
+  applyError: string | null;
 };
 
-export default function MergeView({ patientA, patientB, onClose }: MergeViewProps) {
+export default function MergeView({ patientA, patientB, onClose, onApply, applying, applyError }: MergeViewProps) {
   const [demographicChoice, setDemographicChoice] = useState<Record<DemographicField, "A" | "B">>({
     name: "A",
     birth_date: "A",
@@ -206,20 +218,29 @@ export default function MergeView({ patientA, patientB, onClose }: MergeViewProp
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-5 py-3">
+          {applyError && <p className="mr-auto text-sm text-red-600">{applyError}</p>}
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            disabled={applying}
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
           >
             Close
           </button>
           <button
             type="button"
-            disabled
-            title="Applying a merge (writing a combined, cleaned record) is a later step."
-            className="cursor-not-allowed rounded-md border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-400"
+            disabled={applying}
+            onClick={() =>
+              onApply({
+                patientAId: patientA.patient_id,
+                patientBId: patientB.patient_id,
+                demographicChoice,
+                selectedItemKeys: selectedItems,
+              })
+            }
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
-            Apply Merge (coming soon)
+            {applying ? "Reconciling..." : "Reconcile and Apply Merge"}
           </button>
         </div>
       </div>

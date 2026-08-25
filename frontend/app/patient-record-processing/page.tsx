@@ -3,8 +3,9 @@
 import { useRef, useState } from "react";
 import Breadcrumb from "@/components/layout/Breadcrumb";
 import PatientCard from "@/components/patient-card/PatientCard";
-import MergeView from "@/components/patient-card/MergeView";
+import MergeView, { type MergeSelections } from "@/components/patient-card/MergeView";
 import type { PatientCardData } from "@/components/patient-card/types";
+import { buildReconciledBundle } from "@/lib/reconcile";
 
 // Iteration 02: Download Sample File, Load Sample File, and Run Validation becoming available
 // once a file is loaded. Upload Custom File / Edit Mode / Download Output are stretch (HIL mode)
@@ -20,9 +21,13 @@ import type { PatientCardData } from "@/components/patient-card/types";
 // Validation has produced a report, re-enabled by loading a new file. Mode is UI state only — not
 // sent to the backend.
 // Iteration 07, step 2: the merge icon (HIL mode, on cards with possible_duplicates) now opens
-// MergeView — a 3-pane compare/select UI (Patient A | Merged Preview | Patient B). Selection-only:
-// no backend call, no persistence, no actual bundle mutation. Applying/downloading a merge result
-// is later work. Edit Mode / Download Output remain disabled — still ahead.
+// MergeView — a 3-pane compare/select UI (Patient A | Merged Preview | Patient B).
+// Iteration 07, step 3: "Reconcile and Apply Merge" is real. lib/reconcile.ts builds an actual
+// FHIR bundle from loadedBundle (the raw original — display types don't carry enough to
+// reconstruct real resources) + the reviewer's selections; POSTed to the new POST /reconcile,
+// which runs the exact same validation pipeline as /validate. On success, loadedBundle and
+// validationReport are both replaced with the reconciled result, so every card (not just the
+// merged one) reflects the update. Download Output remains disabled — still ahead.
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 const SAMPLE_BUNDLE_FILENAME = "scenario1_fhir_bundle[78].json";
 
@@ -68,6 +73,9 @@ export default function PatientRecordProcessingPage() {
   const [validationMode, setValidationMode] = useState<"default" | "hil">("default");
   // Iteration 07 step 2: which pair is currently open in the compare/merge view, if any.
   const [mergePair, setMergePair] = useState<{ patientId: string; duplicateId: string } | null>(null);
+  // Iteration 07 step 3: state for the actual POST /reconcile call.
+  const [applyingMerge, setApplyingMerge] = useState(false);
+  const [applyMergeError, setApplyMergeError] = useState<string | null>(null);
 
   // Shared by Load Sample File and Upload Custom File — one place that puts a bundle into state
   // and resets whatever the previous bundle's validation run left behind.
@@ -76,6 +84,7 @@ export default function PatientRecordProcessingPage() {
     setValidationReport(null);
     setValidationError(null);
     setMergePair(null); // a comparison from the old bundle would reference stale/gone patients
+    setApplyMergeError(null);
     const entryCount = Array.isArray(bundle.entry) ? bundle.entry.length : undefined;
     setStatusMessage(entryCount !== undefined ? `${sourceLabel} — ${entryCount} resources.` : sourceLabel);
   }
@@ -170,6 +179,41 @@ export default function PatientRecordProcessingPage() {
     } catch {
       setValidationState("error");
       setValidationError("Validation request failed — is the backend running?");
+    }
+  }
+
+  async function handleApplyMerge(selections: MergeSelections) {
+    if (!loadedBundle) {
+      return;
+    }
+    setApplyingMerge(true);
+    setApplyMergeError(null);
+    try {
+      const reconciledBundle = buildReconciledBundle(loadedBundle, selections);
+      const res = await fetch(`${BACKEND_URL}/reconcile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reconciledBundle),
+      });
+      if (!res.ok) {
+        throw new Error(`backend returned ${res.status}`);
+      }
+      const report: ValidationReport = await res.json();
+      // Both replaced together: loadedBundle so a further merge/re-run continues from the
+      // reconciled state, validationReport so every card (not just the merged one) reflects the
+      // backend's fresh completeness/discrepancy numbers for the updated bundle.
+      setLoadedBundle(reconciledBundle);
+      setValidationReport(report);
+      setStatusMessage(`Merge applied — ${selections.patientBId} merged into ${selections.patientAId}.`);
+      setMergePair(null);
+    } catch (err) {
+      setApplyMergeError(
+        err instanceof Error && err.message.startsWith("Could not find")
+          ? err.message
+          : "Reconcile request failed — is the backend running?"
+      );
+    } finally {
+      setApplyingMerge(false);
     }
   }
 
@@ -327,6 +371,9 @@ export default function PatientRecordProcessingPage() {
               patientA={patientA}
               patientB={patientB}
               onClose={() => setMergePair(null)}
+              onApply={handleApplyMerge}
+              applying={applyingMerge}
+              applyError={applyMergeError}
             />
           );
         })()}

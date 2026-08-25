@@ -125,3 +125,121 @@ whatever's checked on either side.
 
 **Suggested commit message:**
 `feat: add 3-pane compare/select merge view (Patient A | Merged Preview | Patient B)`
+
+---
+
+## Step 3: Reconcile and Apply Merge (actually applies it)
+
+**Scope, per Aaron's instruction:** "we need to implement 'Reconcile and Apply Merge'... We already
+have validators on the backend that are capable of verify the manually reconciled/merged record we
+need to expose it via endpoint and invoke the correct validation. After merge is applied the
+Patient Records on UI will also have to be updated with the correct completeness score and
+discrepencies."
+
+**Backend (`backend/app/services/`)** — new package
+
+| File | Change | Description |
+|---|---|---|
+| `__init__.py` | added | Package docstring. |
+| `validation_service.py` | added | `run_validation(bundle)` — the `/validate` pipeline (structural checks → `parse_bundle_entries` → `build_patient_cards`), factored out of the router so `/validate` and `/reconcile` share one implementation instead of two copies that could drift. |
+
+**Backend (`backend/app/routers/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `reconcile.py` | added | `POST /reconcile` — thin wrapper around `run_validation()`. Kept as its own named endpoint (not just reusing `/validate`) so the two intents stay distinguishable in the API, even though the logic is identical today. |
+| `validation.py` | modified | Reduced to a two-line wrapper around the same `run_validation()`. |
+| `__init__.py` | modified | Registered the new router. |
+
+**Frontend (`frontend/lib/`)** — new directory
+
+| File | Change | Description |
+|---|---|---|
+| `reconcile.ts` | added | `buildReconciledBundle()` — builds the actual merged FHIR bundle from the *original* raw `loadedBundle` (the only place both patients' full resource content still exists — the display-only `PatientCardData` types don't carry it) plus the reviewer's selections. Merged Patient keeps A's id; B's Patient is dropped; unchecked items are removed from the bundle entirely, not just hidden; a kept B-subject resource has its reference rewritten to A. |
+
+**Frontend (`frontend/components/patient-card/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `MergeView.tsx` | modified | "Reconcile and Apply Merge" button is now real: reports the reviewer's selections via a new `onApply` prop instead of being permanently disabled. New `applying`/`applyError` props (inline error shown in the view itself — a page-level banner would be hidden behind the modal overlay). |
+
+**Frontend (`frontend/app/patient-record-processing/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `page.tsx` | modified | New `handleApplyMerge()`: builds the bundle via `buildReconciledBundle()`, POSTs to `/reconcile`, and on success **replaces both `loadedBundle` and `validationReport`** with the response — this is what makes every card (not just the merged one) reflect fresh completeness/discrepancy numbers, since the whole updated bundle is re-validated, not just the merged pair. |
+
+**project-plan/**
+
+| File | Change | Description |
+|---|---|---|
+| `Assumptions.md` | modified | New entry: applying a merge is a real, in-memory, non-reversible-within-the-app data-mutating operation (bounded — stateless backend, nothing persisted); documents exactly what does and doesn't get merged (3 demographic fields swappable, everything else defaults to A; unchecked items dropped entirely, not just deduplicated). |
+| `LLD.md`, `TestPlan.md` | modified | Full step-3 writeup, including a real finding from testing (see below). |
+
+**Decisions this iteration**
+
+- **Applying a merge can permanently drop more than "duplicates"** — unchecking any item, for any
+  reason, removes it from the resulting bundle. This is broader than a narrow "dedup" action and is
+  explicitly recorded in `Assumptions.md` rather than left implicit in the code.
+- **Only 3 demographic fields (name/birthDate/identifiers) are actually chooseable** between A and
+  B; everything else on the Patient resource (gender, telecom, address, `meta`, extensions)
+  silently keeps A's value. A real current limitation of the compare UI, not an inferred "A is
+  correct" judgment — flagged so it isn't mistaken for one.
+- **`/reconcile` is a separate named endpoint from `/validate`**, not a query param or reused route,
+  even though the logic is identical today — a deliberate API-design choice for future
+  extensibility, not something Aaron explicitly specified either way.
+
+**Verification performed**
+
+- `curl`-level sanity check first: `/validate` and `/reconcile` confirmed to return identical
+  results for the same input, proving the factored-out `run_validation()` behaves the same via
+  either route.
+- Fixed a real, unrelated corruption found mid-step: a stray trailing `/` appeared in
+  `validation_service.py` on disk (same class of accidental corruption as the earlier `SKILL.md`
+  incident) — confirmed via the backend logs that it actually crashed the reload with a
+  `SyntaxError` (not assumed), fixed it, confirmed clean recovery before continuing.
+- Full round trip in a real browser, default selections (nothing unchecked): merge applied
+  correctly, structural summary dropped from 3 to 2 patients with every other count preserved,
+  merged card at 60%/2 discrepancies (hand-verified exactly), Yusuf Ibrahim's card **completely
+  unchanged** — confirms the merge only touched its target pair, not the whole dataset.
+- **Unchecked-item case, also verified**, and a genuine finding came out of it: unchecking chen-1's
+  Encounter left `tp-partial-condition-chen1`'s `encounter` reference dangling — the merged card
+  showed 3 discrepancies, which didn't match my own quick hand-prediction (I expected 2). Rather
+  than trust either number blindly, replayed the exact reconcile call directly against the backend
+  in Python — confirmed the **UI was correct and my hand-prediction was wrong**: the backend
+  correctly flagged the newly-orphaned reference as a new `dangling_reference` discrepancy. Real
+  evidence for why the merge re-runs the full backend pipeline rather than approximating the result
+  client-side.
+
+**Suggested commit message:**
+`feat: implement Reconcile and Apply Merge — POST /reconcile endpoint + client-side bundle reconstruction`
+
+---
+
+## Step 4: warning marker on collapsed accordion sections
+
+**Feedback:** "Major quality of life Observation: It is not easy to determine which collapsed
+sections have discrepencies it would be nice to put a warning symbol on the accordion if it has
+discrepencies in the section."
+
+**Frontend (`frontend/components/patient-card/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `ResourceSection.tsx` | modified | The collapsed `<summary>` now shows `⚠ N discrepanc{y,ies}` (summed from every item's `discrepancies.length`) when the section contains any — same visual pattern as the per-item `⚠ N` badges already used in `MergeView.tsx`'s checklist, for consistency rather than inventing a new indicator style. No marker at all when a section is clean. |
+
+**project-plan/**
+
+| File | Change | Description |
+|---|---|---|
+| `LLD.md`, `TestPlan.md` | modified | Writeup + verification record. |
+
+**Decisions this iteration** — none; pure display computation over data already present, no new clinical interpretation.
+
+**Verification performed:** real browser, real bundle (patient-001/patient-002 response) — sections
+with no discrepancies show no marker; sections with discrepancies show the correct count
+(Conditions ⚠2, Allergies ⚠3, Observations ⚠2, Excluded ⚠8 — sums to the known 18-discrepancy
+total for this bundle) and correct singular/plural grammar.
+
+**Suggested commit message:**
+`feat: show discrepancy count warning on collapsed accordion sections`

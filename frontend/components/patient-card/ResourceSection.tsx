@@ -12,10 +12,23 @@ export default function ResourceSection({ title, items, defaultOpen }: ResourceS
     return null;
   }
 
+  // Quality-of-life: a collapsed section gives no hint that something inside needs attention —
+  // surface a warning + count on the summary itself, matching the ⚠ N style already used per-item
+  // (see the checklist in MergeView.tsx), so a reviewer doesn't have to expand every section just
+  // to find out which ones matter.
+  const discrepancyCount = items.reduce((sum, item) => sum + item.discrepancies.length, 0);
+
   return (
     <details open={defaultOpen} className="mt-3 rounded border border-slate-200">
-      <summary className="cursor-pointer select-none rounded px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-        {title} ({items.length})
+      <summary className="flex cursor-pointer select-none items-center gap-2 rounded px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+        <span>
+          {title} ({items.length})
+        </span>
+        {discrepancyCount > 0 && (
+          <span className="text-xs font-semibold text-amber-700">
+            ⚠ {discrepancyCount} discrepanc{discrepancyCount === 1 ? "y" : "ies"}
+          </span>
+        )}
       </summary>
       <ul className="space-y-2 px-3 pb-3">
         {items.map((item) => (
