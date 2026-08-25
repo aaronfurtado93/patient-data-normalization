@@ -3,6 +3,19 @@ services:
     build: ./backend
     ports:
       - "8010:8000"
+    environment:
+      # Same host-kernel inotify limit as the frontend's WATCHPACK_POLLING fix — uvicorn's
+      # --reload watcher (watchfiles) hits it too. Poll instead.
+      - WATCHFILES_FORCE_POLLING=true
+    volumes:
+      # Bind-mounts the actual source so uvicorn's --reload picks up host edits live.
+      - ./backend/app:/app/app
+      # Read-only: backend only ever reads the sample bundle, never writes to it.
+      - ./inputdata:/app/inputdata:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   frontend:
     build: ./frontend
@@ -10,5 +23,21 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_BACKEND_URL=http://localhost:8010
+      # inotify-based watching hits an EMFILE wall inside the container (fs.inotify.max_user_watches
+      # is a host-kernel limit a container ulimit can't raise) — poll instead so edits are seen
+      # without needing to touch host sysctls.
+      - WATCHPACK_POLLING=true
+    volumes:
+      # Bind-mounts the actual source so `next dev`'s watcher sees host edits live — without this,
+      # the container only ever sees the code baked in at image-build time (the bug this fixes).
+      - ./frontend:/app
+      # Anonymous volumes: keep the container's own installed node_modules / .next build cache
+      # from being shadowed by the (empty/stale) host directories of the same name.
+      - /app/node_modules
+      - /app/.next
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     depends_on:
       - backend

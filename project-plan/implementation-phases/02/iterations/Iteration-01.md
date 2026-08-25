@@ -74,3 +74,35 @@ header's home link (`href="/"`) and the breadcrumb's "Dashboard" link render on
 
 **Suggested commit message:**
 `frontend: add home link and breadcrumb navigation back to dashboard`
+
+---
+
+## Manual testing feedback round 2
+
+**Feedback:** "looks like live reload is not working the way it works with Vite based react applications."
+
+**Root cause found:** `docker-compose.yml` never mounted the source into either container — the
+containers only ever had the code baked in at image-build time (`COPY . .` in each Dockerfile), so
+`next dev`'s watcher was watching a copy of the source that could never change; every edit required
+a full `docker compose up --build` to be seen at all. Separately, once bind-mounted, the watcher
+still couldn't pick up changes — `EMFILE: too many open files` on `inotify` watches, which turned
+out to be a **host-kernel** limit (`fs.inotify.max_user_watches`), not something a container
+`ulimit`/`nofile` setting can raise (that governs open file descriptors generally, a different
+resource) — confirmed by raising the container's `nofile` ulimit to 65536 and still seeing the
+error.
+
+**repo-root/**
+
+| File | Change | Description |
+|---|---|---|
+| `docker-compose.yml` | modified | Added bind-mount volumes for both services (`./backend/app:/app/app`, `./frontend:/app` with anonymous volumes protecting the container's own `node_modules`/`.next`) so host edits actually reach the running containers. Added `ulimits.nofile` (65536) to both — turned out not to be the actual fix for the watcher issue, kept anyway since it's a reasonable ceiling regardless. Added `WATCHPACK_POLLING=true` to the frontend — the actual fix: polls for file changes instead of relying on `inotify`, avoiding the host sysctl limit entirely rather than requiring the user to raise it system-wide. |
+
+**Decisions this iteration** — none with clinical-data-safety implications; infrastructure/dev-experience fix only.
+
+**Verification performed:** with the stack running (no rebuild), edited `frontend/app/page.tsx` on
+the host twice in a row and confirmed via `curl` each time that the change reached
+`http://localhost:3000/` within a few seconds, with the container logs showing an automatic
+recompile (`✓ Compiled in ...ms`) and no further `EMFILE` errors.
+
+**Suggested commit message:**
+`chore: mount source volumes and enable polling so frontend/backend hot-reload actually works in docker`
