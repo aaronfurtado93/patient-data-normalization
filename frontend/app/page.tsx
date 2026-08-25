@@ -17,10 +17,12 @@ export default function Home() {
   }, []);
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>Centauri Clinical Snapshot</h1>
-      <p>Scaffolding placeholder — the patient snapshot UI lands in Phase 02.</p>
-      <p>{status}</p>
+    <main className="p-8 font-sans">
+      <h1 className="text-2xl font-bold text-slate-900">Centauri Clinical Snapshot</h1>
+      <p className="mt-2 text-slate-600">
+        Scaffolding placeholder — the patient snapshot UI lands in Phase 02.
+      </p>
+      <p className="mt-4 text-sm text-slate-500">{status}</p>
     </main>
   );
 }
