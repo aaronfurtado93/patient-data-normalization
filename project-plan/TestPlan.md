@@ -105,6 +105,26 @@ Two fixtures added at `backend/tests/fixtures/` for manual review and future aut
   against the project's "never silently drop" posture; not yet decided whether this needs its own
   discrepancy kind. See `Assumptions.md`/Iteration follow-up.
 
+### Phase 02 — Iteration 05: Upload Custom File
+
+All verification done in a real browser via `claude-in-chrome`'s `file_upload` tool (uploads
+directly to the file input element, bypassing the native OS picker the automation can't otherwise
+see) — not `curl`, since this is entirely client-side file-reading logic with no dedicated backend
+endpoint to hit directly:
+
+- Uploaded `backend/tests/fixtures/fully_valid_bundle.json` → correctly loaded ("6 resources"),
+  Run Validation produced the identical zero-discrepancy result already verified for this fixture
+  in Iteration 04's refinement pass.
+- Uploaded a hand-written invalid-JSON file → `"broken.json" is not valid JSON.`, `loadedBundle`
+  from the previous successful upload left untouched (confirmed Run Validation stayed enabled on
+  the prior bundle rather than being reset by the failed attempt).
+- Uploaded a hand-written valid-JSON-but-wrong-`resourceType` file (`{"resourceType": "Patient"}`)
+  → `"wrong-type.json" does not look like a FHIR Bundle (resourceType must be "Bundle").`
+- Uploaded `backend/tests/fixtures/fully_invalid_bundle.json` → identical result to the direct
+  `curl` verification in the same iteration's refinement pass (23 discrepancies, 3 structural
+  errors, both duplicates, all 5 excluded items) — confirms the upload path and the Load Sample
+  File path converge on the exact same downstream behavior once a bundle is in state.
+
 ## Automated coverage
 
 None yet. First candidates, once written:

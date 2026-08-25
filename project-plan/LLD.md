@@ -258,11 +258,31 @@ Rendered on `/patient-record-processing` below the existing structural-validatio
     `/validate` and renders the `ValidationReport` — valid/invalid badge, per-resource-type counts,
     and any `ValidationIssue`s. Network-level failures go to a separate `validationError` state,
     kept distinct from both the report's own `errors` array and the Load-related `statusMessage`.
-  - **Upload Custom File / Edit Mode / Download Output**: permanently `disabled`, styled distinctly
-    (`stretchButtonClass`) from the two active buttons — HIL-mode stretch goals per
-    `Assumptions.md`.
+  - **Upload Custom File** (Iteration 05): real, no backend round trip needed to "load" it — a
+    hidden `<input type="file">` (triggered by a visible styled button via a `ref`, so the native
+    file picker keeps the app's own button styling) reads the selected file client-side with
+    `file.text()`, `JSON.parse`s it, and checks `resourceType === "Bundle"` before calling the same
+    `applyLoadedBundle()` helper Load Sample File uses (factored out this iteration so both paths
+    share one "put a bundle into state, reset any stale validation result" code path). Two
+    client-side guard checks exist purely for fast, accurate feedback — **not** as a duplicate of
+    `/validate`'s real structural validation, which still runs (and is authoritative) once Run
+    Validation is clicked:
+    - Invalid JSON → `"<filename>" is not valid JSON.` (separate `uploadError` state, doesn't
+      touch `statusMessage` or clear a previously-successfully-loaded bundle).
+    - Parses but `resourceType !== "Bundle"` → `"<filename>" does not look like a FHIR Bundle
+      (resourceType must be "Bundle").`
+    - Anything that clears both checks is handed to `/validate` exactly like the sample bundle is —
+      no special-casing downstream; a messy uploaded bundle gets the same discrepancy treatment as
+      a messy sample bundle would.
+    - `event.target.value` is reset to `""` after reading the file, so re-selecting the same
+      filename still fires `onChange` (otherwise the browser treats it as no change).
+  - **Edit Mode / Download Output**: still permanently `disabled`, styled distinctly
+    (`stretchButtonClass`) — the remaining HIL-mode stretch goals per `Assumptions.md`.
   - **Validation Mode toggle**: `<select disabled>`, `Default` / `HIL (Coming Soon)` — present but
-    inert, since HIL mode isn't built.
+    inert. Note: Upload Custom File works today under "Default" mode — `/validate` doesn't
+    currently distinguish a mode at all, so an uploaded bundle is validated identically to the
+    sample bundle. This toggle governs the *edit-in-place* HIL capability specifically, not
+    whether upload/validate works.
 
 ## Not yet designed
 

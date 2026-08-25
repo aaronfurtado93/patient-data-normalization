@@ -11,7 +11,11 @@ Aaron's direction — designed against real code rather than speculatively) rath
 
 | # | Focus | Status |
 |---|---|---|
-| 01 | Dashboard + Hamburger sidebar nav + Patient Record Processing page (routing/shell only, no normalization logic yet) | Done — awaiting manual testing feedback |
+| 01 | Dashboard + Hamburger sidebar nav + Patient Record Processing page (routing/shell only, no normalization logic yet) | Done |
+| 02 | Download/Load Sample File + Run Validation enablement; backend restructured into `core`/`routers` packages with `AppError` + centralized exception handling | Done |
+| 03 | Pydantic v2 resource models (`app/models/`) + `POST /validate` structural validation endpoint, wired into Run Validation | Done |
+| 04 | Patient reconciliation + full discrepancy detection (`app/clinical_normalization/`) + hierarchical, discrepancy-annotated Patient Card UI | Done |
+| 05 | Upload Custom File — real, client-side JSON read + validation, feeds the same `/validate` pipeline as Load Sample File | Done |
 
 ## Notes
 

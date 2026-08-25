@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Breadcrumb from "@/components/layout/Breadcrumb";
 import PatientCard from "@/components/patient-card/PatientCard";
 import type { PatientCardData } from "@/components/patient-card/types";
@@ -12,6 +12,9 @@ import type { PatientCardData } from "@/components/patient-card/types";
 // against the backend's Pydantic models) and renders the report — no longer a placeholder.
 // Iteration 04: the report now also carries a patient-centric, discrepancy-annotated PatientCard
 // (see components/patient-card/), rendered below the structural summary.
+// Iteration 05: Upload Custom File is real — reads a local JSON file client-side (no backend round
+// trip to "load" it; POST /validate already accepts any bundle body). Edit Mode / Download Output
+// remain disabled — still HIL-mode stretch scope.
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 const SAMPLE_BUNDLE_FILENAME = "scenario1_fhir_bundle[78].json";
 
@@ -45,9 +48,23 @@ export default function PatientRecordProcessingPage() {
   const [loadedBundle, setLoadedBundle] = useState<Record<string, unknown> | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  const [uploadState, setUploadState] = useState<AsyncState>("idle");
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [validationState, setValidationState] = useState<AsyncState>("idle");
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Shared by Load Sample File and Upload Custom File — one place that puts a bundle into state
+  // and resets whatever the previous bundle's validation run left behind.
+  function applyLoadedBundle(bundle: Record<string, unknown>, sourceLabel: string) {
+    setLoadedBundle(bundle);
+    setValidationReport(null);
+    setValidationError(null);
+    const entryCount = Array.isArray(bundle.entry) ? bundle.entry.length : undefined;
+    setStatusMessage(entryCount !== undefined ? `${sourceLabel} — ${entryCount} resources.` : sourceLabel);
+  }
 
   async function handleDownload() {
     setDownloadState("loading");
@@ -70,20 +87,52 @@ export default function PatientRecordProcessingPage() {
 
   async function handleLoad() {
     setLoadState("loading");
-    setValidationReport(null);
-    setValidationError(null);
     try {
       const bundle = await fetchSampleBundle();
-      setLoadedBundle(bundle);
-      const entryCount = Array.isArray(bundle.entry) ? bundle.entry.length : undefined;
-      setStatusMessage(
-        entryCount !== undefined ? `Sample file loaded — ${entryCount} resources.` : "Sample file loaded."
-      );
+      applyLoadedBundle(bundle, "Sample file loaded");
       setLoadState("idle");
     } catch {
       setLoadState("error");
       setStatusMessage("Failed to load sample file — is the backend running?");
     }
+  }
+
+  function handleUploadClick() {
+    setUploadError(null);
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // reset so re-selecting the same file still fires onChange
+    if (!file) {
+      return;
+    }
+
+    setUploadState("loading");
+    setUploadError(null);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch {
+      setUploadState("error");
+      setUploadError(`"${file.name}" is not valid JSON.`);
+      return;
+    }
+
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      (parsed as Record<string, unknown>).resourceType !== "Bundle"
+    ) {
+      setUploadState("error");
+      setUploadError(`"${file.name}" does not look like a FHIR Bundle (resourceType must be "Bundle").`);
+      return;
+    }
+
+    applyLoadedBundle(parsed as Record<string, unknown>, `${file.name} loaded`);
+    setUploadState("idle");
   }
 
   async function handleRunValidation() {
@@ -142,9 +191,21 @@ export default function PatientRecordProcessingPage() {
           {loadState === "loading" ? "Loading..." : "Load Sample File"}
         </button>
 
-        <button type="button" disabled className={stretchButtonClass}>
-          Upload Custom File (Coming Soon, for HIL mode)
+        <button
+          type="button"
+          onClick={handleUploadClick}
+          disabled={uploadState === "loading"}
+          className={primaryButtonClass}
+        >
+          {uploadState === "loading" ? "Uploading..." : "Upload Custom File"}
         </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={handleFileSelected}
+          className="hidden"
+        />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -182,6 +243,7 @@ export default function PatientRecordProcessingPage() {
       {downloadState === "error" && (
         <p className="mt-2 text-sm text-red-600">Download failed — is the backend running?</p>
       )}
+      {uploadError && <p className="mt-2 text-sm text-red-600">{uploadError}</p>}
       {validationError && <p className="mt-2 text-sm text-red-600">{validationError}</p>}
 
       {validationReport && (
