@@ -1,17 +1,27 @@
-"""Patient identity clustering + canonical-patient selection within each cluster.
+"""Patient identity matching — detection only, never merging.
 
-Scope note: this project handles one bundle at a time (MVP, per Assumptions.md). Within that
-bundle, `cluster_patients` groups `Patient` resources believed to represent the *same person*
-using one explicit, auditable rule (see `same_person`) — normalized family name match AND
-compatible `birthDate` values. This is deliberately **not** fuzzy/similarity-scored matching (no
-soundex, no edit distance, no given-name matching) — every grouping decision has to be explainable
-as "these two match on X" rather than "these two scored 0.87 similar." Patients that don't match
-anyone get their own single-patient cluster (their own card, no duplicate flag) — see
-`Assumptions.md` for the full reasoning and the (deliberately narrow) boundary of what this does
-and does not attempt to catch.
+Scope note: this project handles one bundle at a time (MVP, per Assumptions.md). `cluster_patients`
+groups `Patient` resources believed to represent the *same person* using one explicit, auditable
+rule (see `same_person`) — normalized family name match AND compatible `birthDate` values.
+Deliberately **not** fuzzy/similarity-scored matching (no soundex, no edit distance, no given-name
+matching) — every grouping decision has to be explainable as "these two match on X," not "these
+two scored 0.87 similar."
 
-Within a cluster, `reconcile_patients` picks the canonical record the same way it always has:
-highest `completeness_score` wins, every other cluster member is a possible duplicate of it.
+**Critical: a cluster is used only to cross-reference cards, never to build one.** Default/auto
+mode gives every `Patient` resource its own `PatientCard` with its own resources — full stop, no
+exceptions, regardless of how confidently two patients match. `clinical_normalization/patient_card.py`
+uses `cluster_patients` solely to populate each card's `possible_duplicates` list (pointing at the
+*other* members of its cluster) — it never uses cluster membership to decide which resources belong
+on which card. Combining two Patient records — or moving/attributing one's clinical data onto the
+other's card — is an action reserved for an authorized human reviewer (HIL/manual mode), not
+something this pipeline performs on its own. See `Assumptions.md` for the full reasoning; this
+boundary was tightened after an initial implementation incorrectly merged matched patients into one
+card, which this docstring exists partly to prevent recurring.
+
+`completeness_score`/`reconcile_patients` (picking a "more complete" record within a matched group)
+are kept here, defined but **currently unused by the default-mode card-building path** — they're
+the natural building blocks for a future HIL "which record should I keep/merge" view, not something
+that should silently influence what auto mode displays.
 """
 
 from __future__ import annotations

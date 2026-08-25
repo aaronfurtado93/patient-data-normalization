@@ -156,6 +156,35 @@ isolation:
 - Re-verified in a real browser (`claude-in-chrome`, via `file_upload`): both cards render
   side-by-side with correct content, matching the API response exactly.
 
+### Phase 02 — Iteration 06, third pass: correcting an auto-merge mistake
+
+Aaron caught a real defect in the second pass: matched patients were being merged into one card in
+Default/auto mode, which should never happen — merging is a human-authorized (HIL) action only.
+Corrected, then re-verified from scratch rather than assuming the fix was complete:
+
+- **Real bundle**: now produces 2 cards (was incorrectly 1). `medicationrequest-003` confirmed on
+  `patient-002`'s own card, not cross-attributed to `patient-001`. Combined totals across both
+  cards (`16 + 2 = 18` discrepancies) reconcile exactly with the pre-merge single-card total,
+  confirming no discrepancy was lost or duplicated by the re-attribution.
+- **Both existing single-cluster fixtures** re-run — unaffected (they only ever had one cluster,
+  so one-card-per-cluster and one-card-per-patient-within-a-cluster coincide when the cluster has
+  one member... except where it doesn't: `multiple_distinct_patients_bundle.json`'s Whitfield pair
+  now correctly produces 2 cards instead of 1, cross-flagging each other).
+- **Two purpose-built fixtures**, per Aaron's explicit spec:
+  - `three_patients_fully_valid_bundle.json` — 3 unrelated patients (different family names, no
+    match), each with one Encounter/Condition/Observation/MedicationRequest/AllergyIntolerance, all
+    clean. Verified: exactly 3 cards, `100%` completeness each, `0` discrepancies each, `0`
+    possible_duplicates each (confirms no false-positive matching between unrelated patients).
+  - `three_patients_partially_valid_bundle.json` — 2 patients matching on name+birthDate (Wei
+    Chen, full vs. month-precision DOB) + 1 unrelated (Yusuf Ibrahim), deliberately uneven resource
+    coverage (Chen-1: Encounter+Condition+Observation only; Chen-2: Condition+MedicationRequest
+    only; Ibrahim: full complement including one excluded AllergyIntolerance). Verified: exactly 3
+    cards at `67%` / `50%` / `80%` completeness respectively (hand-predicted before running, then
+    confirmed exact match) — the two Chen cards symmetrically list each other in
+    `possible_duplicates`, Ibrahim lists none.
+- Both new fixtures re-verified in a real browser (`claude-in-chrome`, via `file_upload`) — cards
+  render correctly, matching the API responses exactly.
+
 ## Automated coverage
 
 None yet. First candidates, once written:
@@ -170,11 +199,14 @@ None yet. First candidates, once written:
   status-exclusion per resource type including the "stopped ≠ excluded" distinction, every
   `discrepancies.py` check in isolation, the invariant-violation detection, the duplicate-patient-
   link flag). Currently only covered end-to-end (real bundle in, full response checked), but
-  `backend/tests/fixtures/{fully_valid,fully_invalid,multiple_distinct_patients}_bundle.json` now
-  exist as ready-made inputs for exactly this once a framework is chosen — no per-function unit
-  tests yet. `same_person()`/`cluster_patients()` specifically deserve direct unit coverage of
-  their edge cases (no name at all, name matches but birthDate absent on one side, three-way
-  transitive clustering) beyond what the fixtures exercise end-to-end.
+  `backend/tests/fixtures/{fully_valid,fully_invalid,multiple_distinct_patients,
+  three_patients_fully_valid,three_patients_partially_valid}_bundle.json` now exist as ready-made
+  inputs for exactly this once a framework is chosen — no per-function unit tests yet.
+  `same_person()`/`cluster_patients()` specifically deserve direct unit coverage of their edge
+  cases (no name at all, name matches but birthDate absent on one side, three-way transitive
+  clustering) beyond what the fixtures exercise end-to-end. `_build_card_for_patient()`'s strict
+  subject-equality attribution (no cluster-based cross-attribution) is also now a specific
+  regression worth a permanent test, given it was wrong once already.
 - Frontend: not yet planned in detail: likely component-level tests for the button
   enable/disable wiring once there's enough interactive logic to justify the setup cost.
 

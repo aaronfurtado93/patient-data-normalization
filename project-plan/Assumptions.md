@@ -6,14 +6,16 @@ Anything not yet decided is marked **open** rather than silently resolved.
 
 ## Data handling
 
-- **`patient-001` is the canonical patient record.** It carries more complete data than
-  `patient-002`: an SSN identifier, a full `birthDate` (vs year-only), and the US Core
-  race/ethnicity extensions. `patient-002` is treated as an unresolved probable duplicate —
-  surfaced as such, not silently merged into or dropped in favor of patient-001.
-- **`medicationrequest-003` is shown in `patient-001`'s medication view, visibly flagged as linked
-  to the unresolved duplicate (`patient-002`)** rather than treated as a confirmed active
-  medication or silently omitted — e.g. "linked to an unresolved second patient record — verify
-  before treating as active." Decided Phase 00 (2026-08-25); no longer open.
+- **`patient-001` and `patient-002` each get their own card** (see the "every Patient gets its own
+  card" rule further down — this bullet is the original Phase 00 case study that rule
+  generalizes). `patient-001` scores higher on completeness (SSN identifier, full `birthDate`, US
+  Core race/ethnicity extensions) but that no longer makes it "the" record in any structural
+  sense — `patient-002` is not merged into it, just cross-referenced as a possible match.
+  **Superseded (Iteration 06, third pass):** `medicationrequest-003` was previously described here
+  as shown under `patient-001`'s view with a "linked to unresolved duplicate" flag. It is not — it
+  is shown on `patient-002`'s own card as an ordinary active medication (that's its actual
+  `subject`), and `patient-002`'s card separately carries the possible-duplicate flag pointing at
+  `patient-001`. No resource is ever displayed on a card other than the one its own reference names.
 - **Any resource with a `status`/`clinicalStatus` of `entered-in-error`, or an inactive/resolved
   clinical status, is never presented as current clinical fact.** Excluded resources are kept in
   a separate bucket for transparency rather than deleted from the response entirely. Reinforced by
@@ -51,22 +53,35 @@ Anything not yet decided is marked **open** rather than silently resolved.
   cluster; that one scores the canonical patient's clinical resources for the MVP's "display
   completeness" goal. Same word, deliberately different metrics for different purposes — not to be
   confused.
-- **Multiple distinct patients in one bundle get one card each** (Iteration 06 — supersedes the
-  earlier "any additional Patient is a duplicate of the canonical one" assumption from Iteration 04,
-  which implicitly treated every bundle as containing exactly one person). Confirmed with Aaron
-  before building, since this is a real clinical-data-safety judgment call (getting it wrong either
-  merges two different real patients into one record, or splits a genuine duplicate into two).
-  **The one explicit, auditable rule** (`patient_reconciliation.same_person`, deliberately not
-  fuzzy/similarity-scored — no soundex, no edit distance, no given-name matching): two `Patient`
-  resources are the same person if their normalized family names match **and** their `birthDate`
-  values are compatible (exact match, or one is a component-wise prefix of the other at whatever
-  precision each has — e.g. `"1958"` is compatible with `"1958-03-12"`). Either signal missing on
-  either patient means **no** match — absence is never treated as a match. Matching is transitive
-  (if A matches B and B matches C, all three cluster together). Patients matching no one get their
-  own single-member cluster — their own card, no duplicate panel. Within each cluster, canonical
-  selection is unchanged (`completeness_score`, highest wins). **Explicitly not attempted**: any
-  broader/fuzzier signal (shared identifier, MRN-prefix relationship, given-name similarity) — the
-  broader-matching option was considered and declined in favor of the narrower, more auditable rule.
+- **Every `Patient` resource in a bundle gets its own card, always — Default/auto mode never
+  merges two patients' cards or resources, no matter how confidently they match.** (Iteration 06,
+  third pass — **corrects** a same-day second-pass implementation that *did* merge matched patients
+  into one card; that was a real mistake, caught by Aaron's review, not a deliberate design this
+  supersedes casually.) Merging two patient records is an action reserved for an authorized human
+  reviewer (HIL/manual mode) — this pipeline detects and flags a possible relationship, it does not
+  act on it. This also **fully supersedes** Iteration 04's original "any additional Patient is a
+  duplicate of the canonical one" assumption, which both merged unconditionally *and* implicitly
+  assumed a bundle contains exactly one person — neither holds any more.
+  - **The one explicit, auditable match rule** (`patient_reconciliation.same_person`, deliberately
+    not fuzzy/similarity-scored — no soundex, no edit distance, no given-name matching): two
+    `Patient` resources are flagged as a possible match if their normalized family names match
+    **and** their `birthDate` values are compatible (exact match, or one is a component-wise prefix
+    of the other at whatever precision each has — e.g. `"1958"` is compatible with `"1958-03-12"`).
+    Either signal missing on either patient means **no** match — absence is never treated as a
+    match. Matching is transitive for grouping purposes (if A matches B and B matches C, all three
+    are cross-referenced) — but **matching only ever populates each matched patient's own
+    `possible_duplicates` list**; it never changes which resources appear on which card. A resource
+    is attributed to a card if and only if its own `subject`/`patient` reference points at that
+    exact `patient_id` — matching a *different* patient (even a flagged duplicate) does not move a
+    resource onto this card, and a resource with no subject at all, or one pointing at an
+    unrecognized patient id, is silently absent from every card (an extension of the
+    already-documented orphaned-reference gap below, now also covering the no-subject case).
+  - **Explicitly not attempted**: any broader/fuzzier match signal (shared identifier, MRN-prefix
+    relationship, given-name similarity) — considered and declined in favor of the narrower rule.
+  - `completeness_score`/`reconcile_patients` (picking a "more complete" record within a matched
+    group) remain defined in `patient_reconciliation.py` but are **not called** by the default-mode
+    card-building path — kept as building blocks for a possible future HIL "which record should I
+    merge/keep" view, not something that should silently influence what auto mode displays.
 - **`PatientCard.completeness_percentage`** (Iteration 06, closing a gap against
   `ProjectPlan.md`'s MVP wording — the discrepancy count alone wasn't a literal "completeness"
   indicator): % of the canonical patient's clinical resources (every encounter/condition/
@@ -137,12 +152,13 @@ Anything not yet decided is marked **open** rather than silently resolved.
 - Whether `POST /validate` is the final endpoint name/shape long-term, or gets renamed/split once
   HIL/manual-mode (custom upload, edit-and-resubmit) is built — not revisited yet, MVP naming has
   held so far.
-- **A resource whose `subject`/`patient` reference matches neither the canonical patient nor any
-  flagged duplicate is currently silently absent from `PatientCard`** — not in its type bucket, not
-  in `excluded`, no trace at all. Found while building `backend/tests/fixtures/
-  fully_invalid_bundle.json` (its `invalid-condition-2` exercises exactly this). Current behavior
-  is intentional as originally coded (an unrelated resource "doesn't belong on this card"), but it
-  cuts against the project's general "never silently drop, always say so" posture applied
-  everywhere else. Not yet decided whether this needs its own discrepancy kind (e.g.
-  `orphaned_patient_reference`) surfaced somewhere on the card — revisit before considering the
-  discrepancy catalog complete.
+- **A resource whose `subject`/`patient` reference doesn't match any `Patient` id in the bundle —
+  or has no subject at all — is currently silently absent from every `PatientCard`**: not in its
+  type bucket, not in `excluded`, no trace at all. Originally found while building `backend/tests/
+  fixtures/fully_invalid_bundle.json` (`invalid-condition-2`); the no-subject case was folded into
+  this same gap during Iteration 06's third pass (previously a subject-less resource defaulted onto
+  the single existing card — with multiple cards now possible, guessing which one it belongs on
+  would violate the "never guess" rule, so it's omitted instead, which then trips the "never
+  silently drop" rule). Not yet decided whether either case needs its own discrepancy kind (e.g.
+  `orphaned_patient_reference`) surfaced somewhere — revisit before considering the discrepancy
+  catalog complete.

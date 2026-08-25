@@ -127,3 +127,73 @@ family name match + compatible `birthDate`, no fuzzy/similarity scoring.
 
 **Suggested commit message:**
 `feat: cluster patients by identity so genuinely distinct patients render as separate cards`
+
+---
+
+## Third pass: correcting an auto-merge mistake in the second pass
+
+**Major Observation from Aaron:** the second pass above still *combined* related-matching patients
+into one card. That's wrong for Default/auto mode — grouping/merging patient data is something "a
+authorized system user will do manually," not something this pipeline should do on its own.
+Duplicate/related-match detection stays (confirmed: still wanted, `patient_reconciliation.py`
+named as the reference entry point) — only the *merging* was wrong.
+
+This is a real correction, not a refinement — flagging plainly rather than framing it as a natural
+next step.
+
+**Backend (`backend/app/clinical_normalization/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `patient_reconciliation.py` | modified | Docstring rewritten to state the boundary as load-bearing: `cluster_patients` is for cross-referencing only, never for deciding resource attribution. `completeness_score`/`reconcile_patients` explicitly marked as unused by the default-mode path (kept for a possible future HIL view). |
+| `patient_card.py` | modified | `_build_card_for_cluster()` → `_build_card_for_patient()`: one card per `Patient` resource, strict subject-equality attribution (`patient_ref_id == patient.id`, no cluster membership). `build_patient_cards()` now builds one card per patient, using `cluster_patients` solely to populate each card's `possible_duplicates`. Removed the `linked_patient_discrepancy` closure entirely — no longer meaningful once nothing is cross-attributed. |
+
+**Backend (`backend/app/models/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `patient_card.py` | modified | Removed `unresolved_duplicate_patient_link` from `DiscrepancyKind` (nothing generates it any more — a resource simply lives on its actual subject's card). Docstrings on `PossibleDuplicatePatient`/`PatientCard` rewritten to state the no-merge guarantee explicitly, partly so this doesn't quietly regress again. |
+
+**Backend (`backend/tests/fixtures/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `three_patients_fully_valid_bundle.json` | added | 3 unrelated patients, full resource complement each, all clean — per Aaron's explicit spec. |
+| `three_patients_partially_valid_bundle.json` | added | 2 loosely-matching + 1 unrelated, deliberately uneven resource coverage/quality — per Aaron's explicit spec, designed to hand-predict 67%/50%/80% completeness before running (confirmed exact match). |
+
+**project-plan/**
+
+| File | Change | Description |
+|---|---|---|
+| `Assumptions.md` | modified | Corrected the second-pass entry to state the no-merge rule plainly; marked the Phase 00 `medicationrequest-003` bullet as superseded (it now lives on `patient-002`'s own card, not flagged under `patient-001`'s); folded the no-subject case into the existing orphaned-reference "Still open" item. |
+| `LLD.md`, `TestPlan.md` | modified | Full correction writeup + verification record. |
+
+**Decisions this iteration**
+
+- **This is a correction of a real mistake**, not a new design choice — recorded as such in
+  `Assumptions.md` rather than presented as if the third pass were always the plan.
+- **`medicationrequest-003`'s Phase 00 disposition is superseded**: it no longer shows under
+  `patient-001` flagged as duplicate-linked; it shows on `patient-002`'s own card as an ordinary
+  active medication, with the possible-duplicate relationship visible via `patient-002`'s own
+  `possible_duplicates` panel instead. Flagging explicitly since this was one of the project's
+  oldest, most-referenced decisions (dating to Phase 00) — not something to let go stale silently.
+- **No change to per-resource discrepancy/exclusion logic** — every `discrepancies.py`/
+  `status_filters.py` check behaves identically; only resource *attribution* (which card a resource
+  appears on) changed.
+
+**Verification performed**
+
+- Real bundle re-verified from scratch: 2 cards (not 1), `medicationrequest-003` confirmed on
+  `patient-002`'s card specifically, combined discrepancy totals (`16 + 2 = 18`) reconciling
+  exactly with the pre-correction single-card total — confirms the fix redistributes discrepancies
+  correctly rather than losing or duplicating any.
+- Both pre-existing multi-patient-adjacent fixtures re-checked:
+  `multiple_distinct_patients_bundle.json`'s Whitfield pair now correctly produces 2 cards (was 1).
+- Both new fixtures matched hand-predicted values exactly (`100%`×3 for the fully-valid case;
+  `67%`/`50%`/`80%` for the partially-valid case) — predicted before running, not fitted after.
+- Real browser verification (`claude-in-chrome`, `file_upload`) for the partially-valid fixture:
+  three cards render correctly, completeness badges match, duplicate panels correctly symmetric
+  between only the two matching patients.
+
+**Suggested commit message:**
+`fix: never merge matched patients in Default mode — one card per Patient resource, always`

@@ -1,16 +1,14 @@
-"""Assembles one PatientCard per patient-identity cluster in the bundle: each cluster's canonical
-patient + every resource that references it (or a flagged duplicate within the same cluster),
-bucketed by type, with discrepancies attached per item.
+"""Assembles one PatientCard per Patient resource in the bundle — never one merged card per
+matched identity cluster. Each card only ever contains resources whose subject/patient reference
+points at that exact patient; `patient_reconciliation.cluster_patients` is used solely to tell one
+card about another via `possible_duplicates` — matching two patients never moves, combines, or
+hides either one's data. See `patient_reconciliation.py`'s module docstring for why this boundary
+is treated as load-bearing, not incidental.
 
 Deliberately written as explicit per-resource-type blocks rather than one generic loop — more
 boilerplate, but each block is auditable on its own for a project where getting this logic wrong
 has real clinical-data-safety implications. See implementation-logs/Knowledge.md for the catalog
 this surfaces and Assumptions.md for the data-handling rules behind each bucket.
-
-Multiple distinct patients (Iteration 06): `patient_reconciliation.cluster_patients` groups
-`Patient` resources by its one explicit same-person rule; `build_patient_cards` builds one
-independent card per resulting cluster — a bundle with two unrelated patients produces two cards,
-each only ever seeing resources that belong to its own cluster.
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ from pydantic import BaseModel
 
 from app.clinical_normalization import discrepancies as disc
 from app.clinical_normalization import status_filters
-from app.clinical_normalization.patient_reconciliation import cluster_patients, reconcile_patients
+from app.clinical_normalization.patient_reconciliation import cluster_patients
 from app.models.allergy_intolerance import AllergyIntolerance
 from app.models.common import Reference
 from app.models.condition import Condition
@@ -56,20 +54,17 @@ def _subject_patient_id(reference: Reference | None) -> str | None:
     return reference.resource_id if reference else None
 
 
-def _build_card_for_cluster(
-    cluster: list[Patient],
+def _build_card_for_patient(
+    patient: Patient,
+    possible_duplicates: list[Patient],
     resources_by_type: dict[str, list[BaseModel]],
     known_ids: set[tuple[str | None, str | None]],
 ) -> PatientCard:
-    canonical, duplicates = reconcile_patients(cluster)
-    duplicate_ids = {p.id for p in duplicates}
-    cluster_ids = {p.id for p in cluster}  # canonical + duplicates — this cluster's whole identity
-
     card = PatientCard(
-        patient_id=canonical.id,
-        name=_patient_display_name(canonical),
-        birth_date=canonical.birthDate,
-        identifiers=_patient_identifiers(canonical),
+        patient_id=patient.id,
+        name=_patient_display_name(patient),
+        birth_date=patient.birthDate,
+        identifiers=_patient_identifiers(patient),
         possible_duplicates=[
             PossibleDuplicatePatient(
                 patient_id=dup.id,
@@ -77,30 +72,20 @@ def _build_card_for_cluster(
                 birth_date=dup.birthDate,
                 identifiers=_patient_identifiers(dup),
             )
-            for dup in duplicates
+            for dup in possible_duplicates
         ],
     )
 
-    # The duplicate flag itself counts as a discrepancy, even before any per-item ones.
-    total_discrepancies = len(duplicates)
-
-    def linked_patient_discrepancy(patient_ref_id: str | None) -> Discrepancy | None:
-        if patient_ref_id is None or patient_ref_id == canonical.id or patient_ref_id not in duplicate_ids:
-            return None
-        return Discrepancy(
-            kind="unresolved_duplicate_patient_link",
-            message=(
-                f"Linked to unresolved duplicate patient record ({patient_ref_id}), not the "
-                f"canonical patient ({canonical.id}) — verify before treating as current."
-            ),
-        )
+    # The possible-duplicate flag itself counts as a discrepancy on THIS card — it's this card's
+    # own "worth a human's attention" signal, independent of whatever the matched patient's own
+    # card separately shows. Not a merge; see module docstring.
+    total_discrepancies = len(possible_duplicates)
 
     def belongs_to_this_patient(patient_ref_id: str | None) -> bool:
-        # A resource with no subject at all isn't excludable on that basis — surfaced rather than
-        # silently dropped, per the project's "don't hide it" posture. A resource whose subject
-        # points to a patient outside this cluster (a different person, or an unresolved id)
-        # doesn't belong on this card — it'll show up on its own cluster's card if it has one.
-        return patient_ref_id is None or patient_ref_id in cluster_ids
+        # Strict: only this exact patient id. A resource with no subject, or one pointing at a
+        # different patient (matched or not), does not appear on this card — no guessing which
+        # card an unattributed resource "should" go on. See Assumptions.md.
+        return patient_ref_id == patient.id
 
     # --- Encounters ---
     for enc in resources_by_type.get("Encounter", []):
@@ -114,8 +99,6 @@ def _build_card_for_cluster(
             for reason in status_filters.encounter_exclusion_reasons(enc)
         ]
         excluded = bool(item_discrepancies)
-        if link_disc := linked_patient_discrepancy(patient_ref_id):
-            item_discrepancies.append(link_disc)
 
         summary = "Encounter"
         if enc.type and enc.type[0].coding:
@@ -154,8 +137,6 @@ def _build_card_for_cluster(
         item_discrepancies.extend(disc.missing_display_discrepancies(cond.code))
         if dangling := disc.dangling_reference_discrepancy(cond.encounter, known_ids, "encounter"):
             item_discrepancies.append(dangling)
-        if link_disc := linked_patient_discrepancy(patient_ref_id):
-            item_discrepancies.append(link_disc)
 
         summary = "Condition"
         if cond.code:
@@ -192,8 +173,6 @@ def _build_card_for_cluster(
         for performer in obs.performer:
             if dangling := disc.dangling_reference_discrepancy(performer, known_ids, "performer"):
                 item_discrepancies.append(dangling)
-        if link_disc := linked_patient_discrepancy(patient_ref_id):
-            item_discrepancies.append(link_disc)
 
         summary = "Observation"
         if obs.code and obs.code.coding:
@@ -224,8 +203,6 @@ def _build_card_for_cluster(
         excluded = bool(item_discrepancies)
 
         item_discrepancies.extend(disc.missing_display_discrepancies(med.medicationCodeableConcept))
-        if link_disc := linked_patient_discrepancy(patient_ref_id):
-            item_discrepancies.append(link_disc)
 
         summary = "Medication"
         if med.medicationCodeableConcept and med.medicationCodeableConcept.coding:
@@ -270,8 +247,6 @@ def _build_card_for_cluster(
         item_discrepancies.extend(disc.code_system_mismatch_discrepancies(allergy.code))
         if unconfirmed := disc.unconfirmed_verification_discrepancy(allergy.verificationStatus):
             item_discrepancies.append(unconfirmed)
-        if link_disc := linked_patient_discrepancy(patient_ref_id):
-            item_discrepancies.append(link_disc)
 
         summary = "Allergy"
         if allergy.code and allergy.code.coding:
@@ -310,13 +285,26 @@ def _build_card_for_cluster(
 
 
 def build_patient_cards(resources_by_type: dict[str, list[BaseModel]]) -> list[PatientCard]:
-    """One PatientCard per patient-identity cluster in the bundle. Empty list if the bundle has no
-    Patient resource at all. A resource whose subject/patient reference doesn't match any patient
-    in the bundle is silently absent from every card — a known, documented limitation (see
-    Assumptions.md "Still open"), unchanged by this iteration."""
+    """One PatientCard per Patient resource in the bundle — always, even for patients that match
+    another one via `same_person`. Matching only populates `possible_duplicates`; it never causes
+    two patients' cards or resources to be combined. Empty list if the bundle has no Patient
+    resource at all. A resource whose subject/patient reference doesn't match any patient in the
+    bundle (or has no subject at all) is silently absent from every card — a known, documented
+    limitation (see Assumptions.md "Still open")."""
     patients: list[Patient] = resources_by_type.get("Patient", [])  # type: ignore[assignment]
     if not patients:
         return []
 
     known_ids = _known_ids(resources_by_type)
-    return [_build_card_for_cluster(cluster, resources_by_type, known_ids) for cluster in cluster_patients(patients)]
+
+    # cluster_patients is used ONLY to find each patient's matches for possible_duplicates — never
+    # to decide resource attribution. See this module's docstring and patient_reconciliation.py's.
+    possible_duplicates_by_id: dict[str, list[Patient]] = {}
+    for cluster in cluster_patients(patients):
+        for p in cluster:
+            possible_duplicates_by_id[p.id] = [other for other in cluster if other.id != p.id]
+
+    return [
+        _build_card_for_patient(patient, possible_duplicates_by_id.get(patient.id, []), resources_by_type, known_ids)
+        for patient in patients
+    ]

@@ -17,7 +17,6 @@ DiscrepancyKind = Literal[
     "dangling_reference",
     "code_system_mismatch",
     "unconfirmed_verification",
-    "unresolved_duplicate_patient_link",
 ]
 
 
@@ -39,17 +38,29 @@ class ResourceCardItem(BaseModel):
 
 
 class PossibleDuplicatePatient(BaseModel):
+    """A flag, not a merge. Default/auto mode never combines two Patient resources or their
+    clinical data into one card, however confidently they appear to match — that decision belongs
+    to an authorized human reviewer (HIL/manual mode), not this pipeline. This model exists purely
+    to point one patient's card at another's, so a reviewer sees the relationship without any data
+    being silently merged, moved, or hidden on their behalf."""
+
     patient_id: str
     name: str | None = None
     birth_date: str | None = None
     identifiers: list[str] = Field(default_factory=list)
     note: str = (
-        "Unresolved probable duplicate — the bundle has no FHIR `link` element declaring this "
-        "relationship. Inferred from overlapping demographics, not a resolved duplicate."
+        "Possible duplicate / related match — the bundle has no FHIR `link` element declaring "
+        "this relationship. Inferred from overlapping demographics only; each patient's data "
+        "stays on its own card. Merging is a manual, human-authorized action, not performed here."
     )
 
 
 class PatientCard(BaseModel):
+    """One card per `Patient` resource in the bundle — never one merged card per identity cluster.
+    A resource is attributed to a card only when its own subject/patient reference points at this
+    exact `patient_id`; `possible_duplicates` never changes what resources appear on this card,
+    only what it points a reviewer toward."""
+
     patient_id: str
     name: str | None = None
     birth_date: str | None = None

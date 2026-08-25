@@ -1,0 +1,163 @@
+{
+  "resourceType": "Bundle",
+  "id": "test-bundle-three-patients-partially-valid",
+  "type": "collection",
+  "timestamp": "2026-01-26T09:00:00Z",
+  "total": 9,
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:tp-partial-patient-chen-1",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "tp-partial-patient-chen-1",
+        "meta": { "profile": ["http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"] },
+        "identifier": [
+          { "system": "http://centaurihealth.example.org/mrn", "value": "MRN-40001" },
+          { "system": "http://hl7.org/fhir/sid/us-ssn", "value": "***-**-4001" }
+        ],
+        "active": true,
+        "name": [{ "use": "official", "family": "Chen", "given": ["Wei"] }],
+        "gender": "male",
+        "birthDate": "1980-01-15"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:tp-partial-patient-chen-2",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "tp-partial-patient-chen-2",
+        "identifier": [{ "system": "http://centaurihealth.example.org/mrn", "value": "MRN-40001-B" }],
+        "active": true,
+        "name": [{ "use": "official", "family": "Chen", "given": ["Wei"] }],
+        "gender": "male",
+        "birthDate": "1980-01"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:tp-partial-patient-ibrahim",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "tp-partial-patient-ibrahim",
+        "meta": { "profile": ["http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"] },
+        "identifier": [
+          { "system": "http://centaurihealth.example.org/mrn", "value": "MRN-40002" },
+          { "system": "http://hl7.org/fhir/sid/us-ssn", "value": "***-**-4002" }
+        ],
+        "active": true,
+        "name": [{ "use": "official", "family": "Ibrahim", "given": ["Yusuf"] }],
+        "gender": "male",
+        "birthDate": "1995-07-22"
+      }
+    },
+
+    {
+      "fullUrl": "urn:uuid:tp-partial-encounter-chen1",
+      "resource": {
+        "resourceType": "Encounter", "id": "tp-partial-encounter-chen1", "status": "finished",
+        "class": { "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "AMB", "display": "ambulatory" },
+        "subject": { "reference": "Patient/tp-partial-patient-chen-1" },
+        "period": { "start": "2026-01-14T09:00:00Z", "end": "2026-01-14T09:20:00Z" }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:tp-partial-condition-chen1",
+      "resource": {
+        "resourceType": "Condition", "id": "tp-partial-condition-chen1",
+        "clinicalStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active", "display": "Active" }] },
+        "verificationStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed", "display": "Confirmed" }] },
+        "code": { "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "I10" }] },
+        "subject": { "reference": "Patient/tp-partial-patient-chen-1" },
+        "encounter": { "reference": "Encounter/tp-partial-encounter-chen1" },
+        "onsetDateTime": "2019-05-01T00:00:00Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:tp-partial-observation-chen1",
+      "resource": {
+        "resourceType": "Observation", "id": "tp-partial-observation-chen1", "status": "final",
+        "code": { "coding": [{ "system": "http://loinc.org", "code": "8480-6", "display": "Systolic blood pressure" }] },
+        "subject": { "reference": "Patient/tp-partial-patient-chen-1" },
+        "encounter": { "reference": "Encounter/tp-partial-encounter-chen1" },
+        "effectiveDateTime": "2026-01-14T09:10:00Z",
+        "valueQuantity": { "value": 132, "unit": "mmHg", "system": "http://unitsofmeasure.org", "code": "mm[Hg]" }
+      }
+    },
+
+    {
+      "fullUrl": "urn:uuid:tp-partial-condition-chen2",
+      "resource": {
+        "resourceType": "Condition", "id": "tp-partial-condition-chen2",
+        "clinicalStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active", "display": "Active" }] },
+        "verificationStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed", "display": "Confirmed" }] },
+        "code": { "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "I10", "display": "Essential (primary) hypertension" }] },
+        "subject": { "reference": "Patient/tp-partial-patient-chen-2" },
+        "onsetDateTime": "2019"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:tp-partial-medicationrequest-chen2",
+      "resource": {
+        "resourceType": "MedicationRequest", "id": "tp-partial-medicationrequest-chen2", "status": "active", "intent": "order",
+        "medicationCodeableConcept": { "coding": [{ "system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "314076" }] },
+        "subject": { "reference": "Patient/tp-partial-patient-chen-2" },
+        "authoredOn": "2025-12-01T09:00:00Z",
+        "dosageInstruction": [{ "text": "One tablet daily" }]
+      }
+    },
+
+    {
+      "fullUrl": "urn:uuid:tp-partial-encounter-ibrahim",
+      "resource": {
+        "resourceType": "Encounter", "id": "tp-partial-encounter-ibrahim", "status": "finished",
+        "class": { "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "AMB", "display": "ambulatory" },
+        "subject": { "reference": "Patient/tp-partial-patient-ibrahim" },
+        "period": { "start": "2026-01-16T14:00:00Z", "end": "2026-01-16T14:30:00Z" }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:tp-partial-condition-ibrahim",
+      "resource": {
+        "resourceType": "Condition", "id": "tp-partial-condition-ibrahim",
+        "clinicalStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active", "display": "Active" }] },
+        "verificationStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed", "display": "Confirmed" }] },
+        "code": { "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "J45.909", "display": "Unspecified asthma, uncomplicated" }] },
+        "subject": { "reference": "Patient/tp-partial-patient-ibrahim" },
+        "encounter": { "reference": "Encounter/tp-partial-encounter-ibrahim" },
+        "onsetDateTime": "2016-02-01T00:00:00Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:tp-partial-observation-ibrahim",
+      "resource": {
+        "resourceType": "Observation", "id": "tp-partial-observation-ibrahim", "status": "final",
+        "code": { "coding": [{ "system": "http://loinc.org", "code": "29463-7", "display": "Body weight" }] },
+        "subject": { "reference": "Patient/tp-partial-patient-ibrahim" },
+        "encounter": { "reference": "Encounter/tp-partial-encounter-ibrahim" },
+        "effectiveDateTime": "2026-01-16T14:10:00Z",
+        "valueQuantity": { "value": 79.1, "unit": "kg", "system": "http://unitsofmeasure.org", "code": "kg" }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:tp-partial-medicationrequest-ibrahim",
+      "resource": {
+        "resourceType": "MedicationRequest", "id": "tp-partial-medicationrequest-ibrahim", "status": "active", "intent": "order",
+        "medicationCodeableConcept": { "coding": [{ "system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "746763", "display": "Albuterol 90 MCG Inhaler" }] },
+        "subject": { "reference": "Patient/tp-partial-patient-ibrahim" },
+        "encounter": { "reference": "Encounter/tp-partial-encounter-ibrahim" },
+        "authoredOn": "2026-01-16T14:20:00Z",
+        "dosageInstruction": [{ "text": "Two puffs as needed" }]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:tp-partial-allergyintolerance-ibrahim",
+      "resource": {
+        "resourceType": "AllergyIntolerance", "id": "tp-partial-allergyintolerance-ibrahim",
+        "clinicalStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical", "code": "resolved", "display": "Resolved" }] },
+        "verificationStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification", "code": "entered-in-error", "display": "Entered in Error" }] },
+        "code": { "coding": [{ "system": "http://snomed.info/sct", "code": "300916003", "display": "Latex allergy" }] },
+        "patient": { "reference": "Patient/tp-partial-patient-ibrahim" },
+        "recordedDate": "2011"
+      }
+    }
+  ]
+}

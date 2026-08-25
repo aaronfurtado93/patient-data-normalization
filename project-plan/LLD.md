@@ -214,27 +214,40 @@ same thing). Verified: real bundle → `33` (5 of 15 clean), `fully_valid_bundle
 `fully_invalid_bundle.json` → `10` (1 of 10 clean) — all hand-checked against the actual bucket
 contents, not just trusted from the code.
 
-**Multiple distinct patients → multiple cards** (Iteration 06, second pass): `POST /validate`'s
-response field is `patients: list[PatientCard]`, not a single optional `patient` — renamed to
-match. `clinical_normalization/patient_reconciliation.py` gained `same_person()` (the one explicit
-match rule — normalized family name + compatible `birthDate`, see `Assumptions.md`) and
-`cluster_patients()` (union-find transitive grouping over that rule, preserving input order).
-`patient_card.py`'s single big function was split into `_build_card_for_cluster()` (unchanged
-per-resource-type logic, now scoped to one cluster's `cluster_ids` instead of a single canonical +
-duplicate set) and `build_patient_cards()` (the new orchestrator: cluster the bundle's `Patient`
-resources, build one card per cluster). A resource whose subject matches a patient in a *different*
-cluster is invisible on this cluster's card (it'll show up on its own cluster's card if it has
-one) — same "silently absent if it matches nothing at all" limitation as before, now also applying
-across clusters, not just carried forward unchanged for the single-cluster case.
+**Multiple distinct patients → multiple cards, never merged** (Iteration 06 — two passes, the
+first of which was a real mistake caught by Aaron's review, corrected in the second): `POST
+/validate`'s response field is `patients: list[PatientCard]`. **One card per `Patient` resource,
+always** — matching two patients via `same_person()` never combines their cards or resources; it
+only populates each matched patient's own `possible_duplicates` list, pointing at the other(s).
+Merging is an action reserved for an authorized human (HIL/manual mode), not something this
+pipeline performs. See `Assumptions.md` for the full correction history and reasoning — worth
+reading in full since it documents a real design mistake, not just a feature addition.
 
-Verified: the real bundle and both existing fixtures reproduce **byte-identical** numbers to before
-this change (1 card each, same completeness/discrepancy counts) — pure regression, no behavior
-change for bundles containing only one identity cluster. A new fixture,
-`backend/tests/fixtures/multiple_distinct_patients_bundle.json` (two Whitfield-pattern duplicates +
-one unrelated Garcia patient, each with their own Condition, Garcia also with a MedicationRequest),
-confirms the actually-new path: 2 cards, Whitfield cluster with its duplicate panel and its own
-Condition, Garcia cluster with zero duplicates and her own Condition + Medication — zero
-cross-contamination between the two. Confirmed in both the raw JSON and a real browser render.
+`clinical_normalization/patient_reconciliation.py` has `same_person()` (the one explicit match
+rule — normalized family name + compatible `birthDate`) and `cluster_patients()` (union-find
+transitive grouping over that rule) — used **only** to build each card's `possible_duplicates`
+list. `completeness_score`/`reconcile_patients` (picking a "more complete" record) remain defined
+but are not called by the card-building path at all — no canonical/duplicate distinction exists in
+default-mode output; every patient's card is built identically regardless of match status.
+
+`patient_card.py`'s `_build_card_for_patient()` attributes a resource to a card if and only if its
+own `subject`/`patient` reference equals that exact `patient_id` — strict equality, no cluster
+membership involved. A resource with no subject, or one referencing an unrecognized patient id, is
+silently absent from every card (see `Assumptions.md` "Still open" — an extension of the
+pre-existing orphaned-reference gap, now also covering the no-subject case, since guessing which
+of several possible cards a subject-less resource belongs on would violate the "never guess" rule).
+
+Verified: the real bundle now correctly produces **2** cards (was wrongly 1 during the brief
+merged-implementation window) — `patient-001` and `patient-002` each with only their own resources
+(`medicationrequest-003` now correctly on `patient-002`'s own card, not cross-attributed to
+`patient-001`'s), combined discrepancy totals reconciling exactly with the pre-change single-card
+total (16+2=18). Both single-cluster fixtures regression-clean. Two new fixtures purpose-built for
+this: `three_patients_fully_valid_bundle.json` (3 unrelated patients, full resource complement
+each, zero discrepancies) → 3 cards, 100% each, no false-positive matches. `three_patients_
+partially_valid_bundle.json` (2 loosely-matching + 1 unrelated, deliberately uneven resource
+coverage and data quality per patient) → 3 cards at 67%/50%/80% completeness, the two matching
+patients symmetrically flagging each other, the third flagging no one. All verified via raw JSON
+and a real browser render.
 
 ## Frontend
 
