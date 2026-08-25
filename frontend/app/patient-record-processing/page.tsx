@@ -8,13 +8,8 @@ import Breadcrumb from "@/components/layout/Breadcrumb";
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 
 export default function PatientRecordProcessingPage() {
-  const [status, setStatus] = useState("checking backend...");
 
   useEffect(() => {
-    fetch(`${BACKEND_URL}/health`)
-      .then((res) => res.json())
-      .then((data) => setStatus(`backend status: ${data.status}`))
-      .catch(() => setStatus("backend unreachable"));
   }, []);
 
   return (
@@ -24,7 +19,6 @@ export default function PatientRecordProcessingPage() {
       <p className="mt-1 text-slate-600">
         Bundle load, normalization, and reconciliation UI land in a later Phase 02 iteration.
       </p>
-      <p className="mt-4 text-sm text-slate-500">{status}</p>
     </div>
   );
 }
