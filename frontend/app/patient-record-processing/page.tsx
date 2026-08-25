@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Breadcrumb from "@/components/layout/Breadcrumb";
 import PatientCard from "@/components/patient-card/PatientCard";
+import MergeView from "@/components/patient-card/MergeView";
 import type { PatientCardData } from "@/components/patient-card/types";
 
 // Iteration 02: Download Sample File, Load Sample File, and Run Validation becoming available
@@ -15,6 +16,13 @@ import type { PatientCardData } from "@/components/patient-card/types";
 // Iteration 05: Upload Custom File is real — reads a local JSON file client-side (no backend round
 // trip to "load" it; POST /validate already accepts any bundle body). Edit Mode / Download Output
 // remain disabled — still HIL-mode stretch scope.
+// Iteration 07, step 1: Validation Mode dropdown is now switchable (Default/HIL), locked once Run
+// Validation has produced a report, re-enabled by loading a new file. Mode is UI state only — not
+// sent to the backend.
+// Iteration 07, step 2: the merge icon (HIL mode, on cards with possible_duplicates) now opens
+// MergeView — a 3-pane compare/select UI (Patient A | Merged Preview | Patient B). Selection-only:
+// no backend call, no persistence, no actual bundle mutation. Applying/downloading a merge result
+// is later work. Edit Mode / Download Output remain disabled — still ahead.
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 const SAMPLE_BUNDLE_FILENAME = "scenario1_fhir_bundle[78].json";
 
@@ -57,6 +65,9 @@ export default function PatientRecordProcessingPage() {
   const [validationState, setValidationState] = useState<AsyncState>("idle");
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [validationMode, setValidationMode] = useState<"default" | "hil">("default");
+  // Iteration 07 step 2: which pair is currently open in the compare/merge view, if any.
+  const [mergePair, setMergePair] = useState<{ patientId: string; duplicateId: string } | null>(null);
 
   // Shared by Load Sample File and Upload Custom File — one place that puts a bundle into state
   // and resets whatever the previous bundle's validation run left behind.
@@ -64,6 +75,7 @@ export default function PatientRecordProcessingPage() {
     setLoadedBundle(bundle);
     setValidationReport(null);
     setValidationError(null);
+    setMergePair(null); // a comparison from the old bundle would reference stale/gone patients
     const entryCount = Array.isArray(bundle.entry) ? bundle.entry.length : undefined;
     setStatusMessage(entryCount !== undefined ? `${sourceLabel} — ${entryCount} resources.` : sourceLabel);
   }
@@ -214,12 +226,22 @@ export default function PatientRecordProcessingPage() {
         <label className="flex items-center gap-2 text-sm text-slate-600">
           Validation Mode
           <select
-            disabled
-            defaultValue="default"
-            className="cursor-not-allowed rounded border border-slate-200 bg-slate-100 px-2 py-1 text-slate-400"
+            value={validationMode}
+            onChange={(e) => setValidationMode(e.target.value as "default" | "hil")}
+            disabled={validationReport !== null}
+            title={
+              validationReport !== null
+                ? "Locked after Run Validation — load a new file to change mode."
+                : undefined
+            }
+            className={`rounded border px-2 py-1 ${
+              validationReport !== null
+                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                : "border-slate-300 bg-white text-slate-700"
+            }`}
           >
             <option value="default">Default</option>
-            <option value="hil">HIL (Coming Soon)</option>
+            <option value="hil">HIL</option>
           </select>
         </label>
 
@@ -230,10 +252,6 @@ export default function PatientRecordProcessingPage() {
           className={primaryButtonClass}
         >
           {validationState === "loading" ? "Validating..." : "Run Validation"}
-        </button>
-
-        <button type="button" disabled className={stretchButtonClass}>
-          Edit Mode (Coming Soon, for HIL mode)
         </button>
 
         <button type="button" disabled className={stretchButtonClass}>
@@ -288,8 +306,30 @@ export default function PatientRecordProcessingPage() {
       )}
 
       {validationReport?.patients.map((patient) => (
-        <PatientCard key={patient.patient_id} patient={patient} />
+        <PatientCard
+          key={patient.patient_id}
+          patient={patient}
+          mode={validationMode}
+          onMergeClick={(duplicateId) => setMergePair({ patientId: patient.patient_id, duplicateId })}
+        />
       ))}
+
+      {mergePair &&
+        (() => {
+          const patientA = validationReport?.patients.find((p) => p.patient_id === mergePair.patientId);
+          const patientB = validationReport?.patients.find((p) => p.patient_id === mergePair.duplicateId);
+          if (!patientA || !patientB) {
+            return null; // stale reference (shouldn't happen — applyLoadedBundle clears mergePair)
+          }
+          return (
+            <MergeView
+              key={`${patientA.patient_id}-${patientB.patient_id}`}
+              patientA={patientA}
+              patientB={patientB}
+              onClose={() => setMergePair(null)}
+            />
+          );
+        })()}
     </div>
   );
 }

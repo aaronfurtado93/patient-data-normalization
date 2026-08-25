@@ -273,6 +273,76 @@ Rendered on `/patient-record-processing` below the existing structural-validatio
 Iteration 06: `page.tsx` maps `validationReport.patients` (an array) to one `<PatientCard>` per
 entry, keyed by `patient_id` — was a single optional card before.
 
+### HIL merge process — step 1 of several (Iteration 07)
+
+Stretch goal, being built as a sequence of small, independently-reviewed steps per Aaron's explicit
+direction ("tread carefully... more feedback on smaller sets of changes") — this section will grow
+per step rather than being written speculatively ahead of them.
+
+**Step 1: Validation Mode toggle + merge icon (UI only, no merge logic yet).**
+
+- `page.tsx` gained `validationMode: "default" | "hil"` state. The `<select>` is now a real
+  controlled input (`value`/`onChange`), `disabled={validationReport !== null}` — locked the
+  instant Run Validation produces a report, since the mode a report was generated under shouldn't
+  silently change underneath it; re-enabled automatically the moment a new bundle is loaded
+  (`applyLoadedBundle` already nulls `validationReport`, so no new reset logic was needed for this).
+  **Mode is UI state only right now** — not sent to `/validate`, doesn't change backend behavior at
+  all yet. `PatientCard` receives it as a `mode` prop.
+- `components/patient-card/PatientCard.tsx`: a small inline-SVG merge icon (git-merge-style glyph,
+  no icon library — matches this app's existing plain-SVG/CSS icon convention) renders next to each
+  entry in a card's `possible_duplicates` panel, **only when `mode === "hil"`**. In `default` mode
+  the icon never renders, regardless of how many possible duplicates exist — consistent with
+  `Assumptions.md`'s rule that Default mode never even offers a merge action, let alone performs
+  one. The button is currently inert (`title`/`aria-label` say "coming soon") — clicking it does
+  nothing yet; actual merge behavior is a later step.
+
+Verified in a real browser (`claude-in-chrome`): dropdown switches and reflects the selection;
+locks (greyed, disabled) immediately after Run Validation while retaining "HIL" as the shown value;
+merge icons appear on both matching Wei Chen cards and nowhere else in the same response
+(`three_patients_partially_valid_bundle.json`); loading a new file (Load Sample File) re-enables
+the dropdown, selection preserved.
+
+**Step 2: MergeView — 3-pane compare/select UI (Patient A | Merged Preview | Patient B).**
+
+Per Aaron's exact spec. Clicking a card's merge icon opens `components/patient-card/MergeView.tsx`
+as a full-screen overlay (same `fixed inset-0` backdrop technique as `Sidebar.tsx` — reused rather
+than introducing a new modal pattern). "A" is always the card the icon was clicked from, "B" the
+duplicate it points at.
+
+- **No auto-pairing of resources across sides.** Considered and explicitly declined (this was the
+  scope question asked before building, though the user answered by specifying the 3-pane layout
+  directly rather than picking from the offered options — the 3-pane structure resolves it anyway:
+  each side lists its own items independently; the center "Merged Preview" pane is simply the union
+  of whatever's checked, no attempt to guess that e.g. two differently-coded Conditions represent
+  the same clinical fact).
+- **Demographics** (Name, DOB, Identifiers): single-choice radio per field, A selected by default,
+  center reflects the live choice.
+- **Each resource-type bucket** (Encounters/Conditions/Active Medications/Past Medications/
+  Allergies/Observations/Excluded): checkbox per item on each side, defaulting to checked for every
+  bucket **except** Excluded, which defaults unchecked (entered-in-error/inactive/resolved data
+  isn't current fact on either side, so a merged record shouldn't include it by default). Center
+  pane lists the checked items from both sides — a flat union, not deduplicated (e.g. two
+  differently-worded "hypertension" conditions would both appear) — deduplication is explicitly
+  deferred: "we will take a look at cleaning up of data in a later step" (Aaron's words).
+- **Selection-only — no backend call, no persistence, no bundle mutation.** An "Apply Merge" button
+  exists but is permanently disabled with a tooltip explaining why, matching this app's established
+  idiom for showing a feature's boundary in the UI itself (same pattern as Edit Mode/Download
+  Output), not just in code comments.
+- Full `PatientCardData` for both sides comes from `validationReport.patients` at the `page.tsx`
+  level — `MergeView` isn't nested inside `PatientCard`, since a single card's own props (its own
+  data + duplicates' summaries only) aren't enough to render the other side's resource lists.
+  `page.tsx` tracks `mergePair: { patientId, duplicateId } | null`, looks up both full records,
+  and passes a `key` of both ids to force a fresh `MergeView` mount (fresh selection state) if the
+  pair ever changes without closing first. `mergePair` is cleared whenever a new bundle loads
+  (`applyLoadedBundle`), alongside the pre-existing `validationReport` reset.
+
+Verified in a real browser: opened the view for the two matching Wei Chen cards from
+`three_patients_partially_valid_bundle.json`, confirmed correct A/B assignment, correct default
+selections (Encounters/Conditions/Active Medications/Observations all pre-checked, matching each
+side's actual data — chen-1 has no medication, chen-2 has no encounter/observation, exactly as the
+fixture defines), and correct live updates to the center pane when unchecking an item and when
+switching a demographic radio — both changes reflected immediately and correctly.
+
 ### Layout (Iteration 01)
 
 - `AppShell` (client component, holds sidebar open/closed state) → composes `Header` + `Sidebar` +

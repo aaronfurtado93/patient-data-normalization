@@ -16,7 +16,8 @@ Aaron's direction — designed against real code rather than speculatively) rath
 | 03 | Pydantic v2 resource models (`app/models/`) + `POST /validate` structural validation endpoint, wired into Run Validation | Done |
 | 04 | Patient reconciliation + full discrepancy detection (`app/clinical_normalization/`) + hierarchical, discrepancy-annotated Patient Card UI | Done |
 | 05 | Upload Custom File — real, client-side JSON read + validation, feeds the same `/validate` pipeline as Load Sample File | Done |
-| 06 | Completeness indicator — closes a gap found by checking `ProjectPlan.md`'s MVP list against the actual build | Done |
+| 06 | Completeness indicator; multiple distinct patients as separate cards (corrected from an initial auto-merge mistake — Default mode never merges) | Done |
+| 07 | HIL-based merge process — stretch goal, being built as a sequence of small, separately-reviewed steps per Aaron's explicit "tread carefully" direction. Step 1: switchable Validation Mode dropdown (locks after Run Validation, unlocks on new file load) + merge icon on cards with possible duplicates (HIL mode only, not yet functional). | In progress |
 
 ## Notes
 

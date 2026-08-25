@@ -185,6 +185,49 @@ Corrected, then re-verified from scratch rather than assuming the fix was comple
 - Both new fixtures re-verified in a real browser (`claude-in-chrome`, via `file_upload`) — cards
   render correctly, matching the API responses exactly.
 
+### Phase 02 — Iteration 07, step 1: Validation Mode toggle + merge icon
+
+All verified in a real browser (`claude-in-chrome`), since this is pure client-side UI state with
+no backend endpoint to hit directly:
+
+- Dropdown starts enabled (was hardcoded `disabled` before), switches to "HIL" correctly
+  (`form_input` tool, confirmed via the underlying `<select>` value change).
+- After Run Validation: dropdown visibly locks (greyed background, disabled), value still reads
+  "HIL" — confirms it's disabled, not reset.
+- Merge icon renders next to both matching Wei Chen cards' possible-duplicate entries, and is
+  absent from Yusuf Ibrahim's card (which has no possible duplicates) — using
+  `three_patients_partially_valid_bundle.json`, already known to produce exactly this shape.
+- Loading a new file (Load Sample File) after a locked run: dropdown re-enables, "HIL" selection
+  preserved (not reset to "Default").
+- Default mode, same fixture, re-verified in-browser (not just by code inspection of the
+  `mode === "hil"` guard): merge icon absent from all three cards, including the two with
+  `possible_duplicates` — confirms the guard actually works, not just reads correctly.
+- Explicitly confirmed (per Aaron's side note during this step): loading/uploading a new file
+  clears the previous validation results (structural summary + all patient cards) immediately —
+  already correct via the existing `applyLoadedBundle` reset from Iteration 02/05, re-verified live
+  rather than assumed still true after this step's changes.
+
+### Phase 02 — Iteration 07, step 2: 3-pane MergeView
+
+Verified in a real browser (`claude-in-chrome`) using `three_patients_partially_valid_bundle.json`
+(HIL mode, the two matching Wei Chen cards):
+
+- Merge icon click opens the overlay with correct A/B assignment (A = card clicked from).
+- Default selections match each side's actual data exactly: Encounters/Conditions/Active
+  Medications/Observations pre-checked where present; correctly empty ("(none)") where a bucket has
+  no items on that side (chen-1 has no medication, chen-2 has no encounter/observation).
+- Center "Merged Preview" pane correctly unions checked items — confirmed both Conditions (from
+  each side) appear together when both are checked.
+- Unchecking an item on one side immediately removes it from the center pane (confirmed: unchecked
+  chen-1's "I10" condition, center dropped to just chen-2's "Essential (primary) hypertension").
+- Switching a demographic radio (DOB, A→B) immediately updates the center pane's shown value.
+- Discrepancy indicators (⚠ count) carry through onto each item's checklist row, not just in the
+  original cards — useful context while deciding what to include.
+- Reverse-pair check: closed the view, opened it from chen-2's card instead (A=chen-2, B=chen-1 —
+  the reverse of the first open) — confirmed fresh default selections for the new pair (all items
+  re-checked, DOB radio back to defaulting on A), proving the `key`-forced remount actually resets
+  state for a genuinely different pair rather than carrying over stale selections.
+
 ## Automated coverage
 
 None yet. First candidates, once written:
