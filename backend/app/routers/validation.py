@@ -1,11 +1,11 @@
 """POST /validate — structural validation of a FHIR bundle against this project's Pydantic
-models, plus (Iteration 04) the patient-centric, discrepancy-annotated PatientCard for UI
-rendering.
+models, plus (Iteration 04, extended Iteration 06) one patient-centric, discrepancy-annotated
+PatientCard per distinct patient in the bundle, for UI rendering.
 
-Structural validation (valid/resource_counts/errors) is unchanged from Iteration 03. The `patient`
-field is new: built via app/clinical_normalization/ from whatever parsed successfully — see that
-package for the reconciliation/exclusion/discrepancy logic and Knowledge.md for the data-quality
-catalog it detects.
+Structural validation (valid/resource_counts/errors) is unchanged from Iteration 03. `patients` is
+built via app/clinical_normalization/ from whatever parsed successfully — see that package for the
+identity-clustering/reconciliation/exclusion/discrepancy logic and Knowledge.md for the
+data-quality catalog it detects.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from app.clinical_normalization.bundle_parser import parse_bundle_entries
-from app.clinical_normalization.patient_card import build_patient_card
+from app.clinical_normalization.patient_card import build_patient_cards
 from app.core.errors import BadRequestError
 from app.models.validation import ValidationReport
 
@@ -32,11 +32,11 @@ def validate_bundle(bundle: dict[str, Any]) -> ValidationReport:
 
     resources_by_type, errors = parse_bundle_entries(bundle)
     resource_counts = {resource_type: len(items) for resource_type, items in resources_by_type.items()}
-    patient_card = build_patient_card(resources_by_type)
+    patient_cards = build_patient_cards(resources_by_type)
 
     return ValidationReport(
         valid=not errors,
         resource_counts=resource_counts,
         errors=errors,
-        patient=patient_card,
+        patients=patient_cards,
     )

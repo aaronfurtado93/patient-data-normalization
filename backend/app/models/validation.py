@@ -19,6 +19,8 @@ class ValidationReport(BaseModel):
     valid: bool
     resource_counts: dict[str, int]
     errors: list[ValidationIssue] = Field(default_factory=list)
-    # Iteration 04: the canonical patient's data, hierarchically bucketed with discrepancies
-    # attached — built for UI rendering. None if the bundle has no Patient resource at all.
-    patient: PatientCard | None = None
+    # Iteration 04: hierarchically bucketed patient data with discrepancies attached, for UI
+    # rendering. Iteration 06: one PatientCard per distinct patient-identity cluster in the bundle
+    # (was a single optional `patient` field before — renamed/pluralized since a bundle can now
+    # produce more than one card). Empty list if the bundle has no Patient resource at all.
+    patients: list[PatientCard] = Field(default_factory=list)

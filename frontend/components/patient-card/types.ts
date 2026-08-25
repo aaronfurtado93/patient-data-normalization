@@ -37,4 +37,5 @@ export type PatientCardData = {
   allergies: ResourceCardItem[];
   excluded: ResourceCardItem[];
   discrepancy_count: number;
+  completeness_percentage: number;
 };

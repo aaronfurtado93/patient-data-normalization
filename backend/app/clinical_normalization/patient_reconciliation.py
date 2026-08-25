@@ -1,11 +1,17 @@
-"""Canonical-patient selection + unresolved-duplicate flagging.
+"""Patient identity clustering + canonical-patient selection within each cluster.
 
-Scope note: this project handles one bundle at a time (MVP, per Assumptions.md) — this does NOT
-attempt generic multi-patient identity matching across unrelated people (fuzzy name/DOB matching
-across a whole population would be a much larger, riskier undertaking, and isn't needed at this
-scope). Any Patient resource beyond the most complete one found in the bundle is treated as a
-possible duplicate of it. This generalizes the specific patient-001/patient-002 reasoning already
-documented in Assumptions.md just far enough to avoid hardcoding those literal ids — not further.
+Scope note: this project handles one bundle at a time (MVP, per Assumptions.md). Within that
+bundle, `cluster_patients` groups `Patient` resources believed to represent the *same person*
+using one explicit, auditable rule (see `same_person`) — normalized family name match AND
+compatible `birthDate` values. This is deliberately **not** fuzzy/similarity-scored matching (no
+soundex, no edit distance, no given-name matching) — every grouping decision has to be explainable
+as "these two match on X" rather than "these two scored 0.87 similar." Patients that don't match
+anyone get their own single-patient cluster (their own card, no duplicate flag) — see
+`Assumptions.md` for the full reasoning and the (deliberately narrow) boundary of what this does
+and does not attempt to catch.
+
+Within a cluster, `reconcile_patients` picks the canonical record the same way it always has:
+highest `completeness_score` wins, every other cluster member is a possible duplicate of it.
 """
 
 from __future__ import annotations
@@ -38,8 +44,69 @@ def completeness_score(patient: Patient) -> int:
     return score
 
 
+def _normalized_family_name(patient: Patient) -> str | None:
+    for name in patient.name:
+        if name.family:
+            return name.family.strip().casefold()
+    return None
+
+
+def _birth_dates_compatible(a: str | None, b: str | None) -> bool:
+    """True if the two FHIR date strings could describe the same date at different precisions —
+    e.g. "1958" and "1958-03-12" (one is a component-wise prefix of the other), or an exact match.
+    False (never a guessed match) if either is absent, or if any shared component differs."""
+    if not a or not b:
+        return False
+    a_parts, b_parts = a.split("-"), b.split("-")
+    shorter, longer = (a_parts, b_parts) if len(a_parts) <= len(b_parts) else (b_parts, a_parts)
+    return shorter == longer[: len(shorter)]
+
+
+def same_person(a: Patient, b: Patient) -> bool:
+    """The one explicit rule this project uses to decide two Patient resources represent the same
+    person: normalized family name matches AND birthDate values are compatible. Either signal
+    missing on either patient means no match — absence is never treated as a match, per the
+    project's "never guess" posture."""
+    name_a, name_b = _normalized_family_name(a), _normalized_family_name(b)
+    if name_a is None or name_b is None or name_a != name_b:
+        return False
+    return _birth_dates_compatible(a.birthDate, b.birthDate)
+
+
+def cluster_patients(patients: list[Patient]) -> list[list[Patient]]:
+    """Groups Patient resources into identity clusters via `same_person`, with transitive closure
+    (if A matches B and B matches C, all three end up in one cluster even if A and C weren't
+    compared directly as a compatible pair) — union-find over the match graph. A patient matching
+    no one is its own single-member cluster. Order of the input list is preserved for the order
+    clusters (and patients within a cluster) are returned in."""
+    n = len(patients)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[rj] = ri
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if same_person(patients[i], patients[j]):
+                union(i, j)
+
+    clusters: dict[int, list[Patient]] = {}
+    for i, patient in enumerate(patients):
+        clusters.setdefault(find(i), []).append(patient)
+
+    return list(clusters.values())
+
+
 def reconcile_patients(patients: list[Patient]) -> tuple[Patient, list[Patient]]:
-    """Returns (canonical, [every other Patient — each treated as an unresolved probable
-    duplicate, surfaced as such rather than merged or dropped])."""
+    """Within a single identity cluster: returns (canonical, [every other member — each an
+    unresolved probable duplicate, surfaced as such rather than merged or dropped])."""
     ranked = sorted(patients, key=completeness_score, reverse=True)
     return ranked[0], ranked[1:]

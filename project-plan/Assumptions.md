@@ -45,9 +45,39 @@ Anything not yet decided is marked **open** rather than silently resolved.
   `birthDate` precision (year/month/day), +1 per extension, +1 per identifier — the highest-scoring
   `Patient` in the bundle is canonical, every other one is an unresolved probable duplicate. This
   operationalizes the patient-001/patient-002 reasoning above without hardcoding those literal ids.
-  **Explicitly scoped to one bundle at a time** (matches MVP scope) — this is not generic
-  multi-patient identity matching (fuzzy name/DOB matching across an unrelated population); that
-  would be a materially larger and riskier undertaking, out of scope here.
+  **Explicitly scoped to one bundle at a time** (matches MVP scope). **Note this is a different
+  "completeness" from `PatientCard.completeness_percentage` below** — this one scores a `Patient`
+  resource's own demographic completeness, purely to pick a canonical record within an identity
+  cluster; that one scores the canonical patient's clinical resources for the MVP's "display
+  completeness" goal. Same word, deliberately different metrics for different purposes — not to be
+  confused.
+- **Multiple distinct patients in one bundle get one card each** (Iteration 06 — supersedes the
+  earlier "any additional Patient is a duplicate of the canonical one" assumption from Iteration 04,
+  which implicitly treated every bundle as containing exactly one person). Confirmed with Aaron
+  before building, since this is a real clinical-data-safety judgment call (getting it wrong either
+  merges two different real patients into one record, or splits a genuine duplicate into two).
+  **The one explicit, auditable rule** (`patient_reconciliation.same_person`, deliberately not
+  fuzzy/similarity-scored — no soundex, no edit distance, no given-name matching): two `Patient`
+  resources are the same person if their normalized family names match **and** their `birthDate`
+  values are compatible (exact match, or one is a component-wise prefix of the other at whatever
+  precision each has — e.g. `"1958"` is compatible with `"1958-03-12"`). Either signal missing on
+  either patient means **no** match — absence is never treated as a match. Matching is transitive
+  (if A matches B and B matches C, all three cluster together). Patients matching no one get their
+  own single-member cluster — their own card, no duplicate panel. Within each cluster, canonical
+  selection is unchanged (`completeness_score`, highest wins). **Explicitly not attempted**: any
+  broader/fuzzier signal (shared identifier, MRN-prefix relationship, given-name similarity) — the
+  broader-matching option was considered and declined in favor of the narrower, more auditable rule.
+- **`PatientCard.completeness_percentage`** (Iteration 06, closing a gap against
+  `ProjectPlan.md`'s MVP wording — the discrepancy count alone wasn't a literal "completeness"
+  indicator): % of the canonical patient's clinical resources (every encounter/condition/
+  observation/medication/allergy, including excluded ones) that are **both** non-excluded **and**
+  discrepancy-free. `100` when there are no clinical resources at all. Deliberately:
+  - **Does not fold in the possible-duplicate flag** — that stays its own panel, not blended into
+    one number that would conflate "is there a reconciliation concern" with "is the data itself
+    clean."
+  - **Is not a "how much of a complete medical history is present" score** — that would require
+    clinical judgment (what *should* be present for this patient) this project has no grounds to
+    assert. It only measures whether what *is* present in the bundle came through clean.
 - **`Condition`/`AllergyIntolerance` Pydantic models don't enforce the `con-3`/`ait-1` FHIR
   invariants** they violate in this bundle — the violating resources still parse and are surfaced
   (flagged as `invariant_violation` discrepancies) rather than rejected as unparseable. Enforcing

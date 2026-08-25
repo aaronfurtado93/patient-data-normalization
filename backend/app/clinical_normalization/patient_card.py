@@ -1,10 +1,16 @@
-"""Assembles a PatientCard: the canonical patient + every resource in the bundle that references
-it (or a flagged duplicate), bucketed by type, with discrepancies attached per item.
+"""Assembles one PatientCard per patient-identity cluster in the bundle: each cluster's canonical
+patient + every resource that references it (or a flagged duplicate within the same cluster),
+bucketed by type, with discrepancies attached per item.
 
 Deliberately written as explicit per-resource-type blocks rather than one generic loop — more
 boilerplate, but each block is auditable on its own for a project where getting this logic wrong
 has real clinical-data-safety implications. See implementation-logs/Knowledge.md for the catalog
 this surfaces and Assumptions.md for the data-handling rules behind each bucket.
+
+Multiple distinct patients (Iteration 06): `patient_reconciliation.cluster_patients` groups
+`Patient` resources by its one explicit same-person rule; `build_patient_cards` builds one
+independent card per resulting cluster — a bundle with two unrelated patients produces two cards,
+each only ever seeing resources that belong to its own cluster.
 """
 
 from __future__ import annotations
@@ -13,7 +19,7 @@ from pydantic import BaseModel
 
 from app.clinical_normalization import discrepancies as disc
 from app.clinical_normalization import status_filters
-from app.clinical_normalization.patient_reconciliation import reconcile_patients
+from app.clinical_normalization.patient_reconciliation import cluster_patients, reconcile_patients
 from app.models.allergy_intolerance import AllergyIntolerance
 from app.models.common import Reference
 from app.models.condition import Condition
@@ -50,14 +56,14 @@ def _subject_patient_id(reference: Reference | None) -> str | None:
     return reference.resource_id if reference else None
 
 
-def build_patient_card(resources_by_type: dict[str, list[BaseModel]]) -> PatientCard | None:
-    patients: list[Patient] = resources_by_type.get("Patient", [])  # type: ignore[assignment]
-    if not patients:
-        return None
-
-    canonical, duplicates = reconcile_patients(patients)
+def _build_card_for_cluster(
+    cluster: list[Patient],
+    resources_by_type: dict[str, list[BaseModel]],
+    known_ids: set[tuple[str | None, str | None]],
+) -> PatientCard:
+    canonical, duplicates = reconcile_patients(cluster)
     duplicate_ids = {p.id for p in duplicates}
-    known_ids = _known_ids(resources_by_type)
+    cluster_ids = {p.id for p in cluster}  # canonical + duplicates — this cluster's whole identity
 
     card = PatientCard(
         patient_id=canonical.id,
@@ -92,8 +98,9 @@ def build_patient_card(resources_by_type: dict[str, list[BaseModel]]) -> Patient
     def belongs_to_this_patient(patient_ref_id: str | None) -> bool:
         # A resource with no subject at all isn't excludable on that basis — surfaced rather than
         # silently dropped, per the project's "don't hide it" posture. A resource whose subject
-        # points to some other, unrelated patient id doesn't belong on this card at all.
-        return patient_ref_id is None or patient_ref_id == canonical.id or patient_ref_id in duplicate_ids
+        # points to a patient outside this cluster (a different person, or an unresolved id)
+        # doesn't belong on this card — it'll show up on its own cluster's card if it has one.
+        return patient_ref_id is None or patient_ref_id in cluster_ids
 
     # --- Encounters ---
     for enc in resources_by_type.get("Encounter", []):
@@ -282,4 +289,34 @@ def build_patient_card(resources_by_type: dict[str, list[BaseModel]]) -> Patient
         (card.excluded if excluded else card.allergies).append(item)
 
     card.discrepancy_count = total_discrepancies
+
+    # Completeness: % of clinical resources that are both non-excluded and discrepancy-free.
+    # Excluded resources are never "clean" by definition, regardless of their own discrepancy
+    # list. Deliberately independent of the possible-duplicate flag — see PatientCard's docstring.
+    all_items = (
+        card.encounters
+        + card.conditions
+        + card.observations
+        + card.medications_active
+        + card.medications_past
+        + card.allergies
+        + card.excluded
+    )
+    if all_items:
+        clean_items = sum(1 for item in all_items if not item.excluded and not item.discrepancies)
+        card.completeness_percentage = round(100 * clean_items / len(all_items))
+
     return card
+
+
+def build_patient_cards(resources_by_type: dict[str, list[BaseModel]]) -> list[PatientCard]:
+    """One PatientCard per patient-identity cluster in the bundle. Empty list if the bundle has no
+    Patient resource at all. A resource whose subject/patient reference doesn't match any patient
+    in the bundle is silently absent from every card — a known, documented limitation (see
+    Assumptions.md "Still open"), unchanged by this iteration."""
+    patients: list[Patient] = resources_by_type.get("Patient", [])  # type: ignore[assignment]
+    if not patients:
+        return []
+
+    known_ids = _known_ids(resources_by_type)
+    return [_build_card_for_cluster(cluster, resources_by_type, known_ids) for cluster in cluster_patients(patients)]

@@ -16,6 +16,7 @@ Aaron's direction — designed against real code rather than speculatively) rath
 | 03 | Pydantic v2 resource models (`app/models/`) + `POST /validate` structural validation endpoint, wired into Run Validation | Done |
 | 04 | Patient reconciliation + full discrepancy detection (`app/clinical_normalization/`) + hierarchical, discrepancy-annotated Patient Card UI | Done |
 | 05 | Upload Custom File — real, client-side JSON read + validation, feeds the same `/validate` pipeline as Load Sample File | Done |
+| 06 | Completeness indicator — closes a gap found by checking `ProjectPlan.md`'s MVP list against the actual build | Done |
 
 ## Notes
 

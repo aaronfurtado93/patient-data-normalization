@@ -1,6 +1,15 @@
 import type { PatientCardData } from "./types";
 import ResourceSection from "./ResourceSection";
 
+// Visual scale only — not a clinical judgment, just how the same number is colored. See
+// backend/app/models/patient_card.py for the actual definition (% of clinical resources that are
+// both non-excluded and discrepancy-free).
+function completenessBadgeClass(pct: number): string {
+  if (pct >= 90) return "bg-green-100 text-green-800";
+  if (pct >= 50) return "bg-amber-100 text-amber-800";
+  return "bg-red-100 text-red-800";
+}
+
 export default function PatientCard({ patient }: { patient: PatientCardData }) {
   return (
     <div className="mt-6 max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -13,11 +22,20 @@ export default function PatientCard({ patient }: { patient: PatientCardData }) {
             {patient.identifiers.length > 0 ? ` · ${patient.identifiers.join(", ")}` : ""}
           </p>
         </div>
-        {patient.discrepancy_count > 0 && (
-          <span className="whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-            {patient.discrepancy_count} discrepanc{patient.discrepancy_count === 1 ? "y" : "ies"} observed
+        <div className="flex flex-col items-end gap-1">
+          <span
+            className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${completenessBadgeClass(
+              patient.completeness_percentage
+            )}`}
+          >
+            {patient.completeness_percentage}% complete
           </span>
-        )}
+          {patient.discrepancy_count > 0 && (
+            <span className="whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+              {patient.discrepancy_count} discrepanc{patient.discrepancy_count === 1 ? "y" : "ies"} observed
+            </span>
+          )}
+        </div>
       </div>
 
       {patient.possible_duplicates.length > 0 && (

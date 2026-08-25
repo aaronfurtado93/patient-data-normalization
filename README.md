@@ -58,3 +58,10 @@ bundle, single pass.
 
 # Features
 
+* Patient Record Processing
+  * Default (auto-mode)
+    * loads the sample JSON
+    * FE sends for processing
+    * BE sends back evaluation report
+    * FE to organize display each patient record and its completeness based on evaluation report 
+

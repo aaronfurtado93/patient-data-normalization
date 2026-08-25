@@ -31,7 +31,9 @@ type ValidationReport = {
   valid: boolean;
   resource_counts: Record<string, number>;
   errors: ValidationIssue[];
-  patient: PatientCardData | null;
+  // Iteration 06: one card per distinct patient the backend identified in the bundle (was a
+  // single optional `patient` before — renamed/pluralized to match).
+  patients: PatientCardData[];
 };
 
 async function fetchSampleBundle(): Promise<Record<string, unknown>> {
@@ -285,7 +287,9 @@ export default function PatientRecordProcessingPage() {
         </div>
       )}
 
-      {validationReport?.patient && <PatientCard patient={validationReport.patient} />}
+      {validationReport?.patients.map((patient) => (
+        <PatientCard key={patient.patient_id} patient={patient} />
+      ))}
     </div>
   );
 }

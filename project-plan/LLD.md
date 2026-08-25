@@ -204,6 +204,38 @@ list[Discrepancy]` (`kind` + `message`).
 see `Iteration-04.md` for the full verification record (structural JSON check + a real
 browser-driven click-through).
 
+**`completeness_percentage`** (Iteration 06): computed last, after every bucket is finalized —
+`round(100 * clean_items / total_items)` where `total_items` is every item across all seven buckets
+(including `excluded`) and `clean_items` is those with `excluded=False` and `discrepancies=[]`.
+`100` if there are no clinical resources at all. See `Assumptions.md` for the full reasoning,
+including why this is a *different* metric from `patient_reconciliation.completeness_score` (which
+scores a `Patient` resource's demographic completeness for canonical-selection purposes, not the
+same thing). Verified: real bundle → `33` (5 of 15 clean), `fully_valid_bundle.json` → `100`,
+`fully_invalid_bundle.json` → `10` (1 of 10 clean) — all hand-checked against the actual bucket
+contents, not just trusted from the code.
+
+**Multiple distinct patients → multiple cards** (Iteration 06, second pass): `POST /validate`'s
+response field is `patients: list[PatientCard]`, not a single optional `patient` — renamed to
+match. `clinical_normalization/patient_reconciliation.py` gained `same_person()` (the one explicit
+match rule — normalized family name + compatible `birthDate`, see `Assumptions.md`) and
+`cluster_patients()` (union-find transitive grouping over that rule, preserving input order).
+`patient_card.py`'s single big function was split into `_build_card_for_cluster()` (unchanged
+per-resource-type logic, now scoped to one cluster's `cluster_ids` instead of a single canonical +
+duplicate set) and `build_patient_cards()` (the new orchestrator: cluster the bundle's `Patient`
+resources, build one card per cluster). A resource whose subject matches a patient in a *different*
+cluster is invisible on this cluster's card (it'll show up on its own cluster's card if it has
+one) — same "silently absent if it matches nothing at all" limitation as before, now also applying
+across clusters, not just carried forward unchanged for the single-cluster case.
+
+Verified: the real bundle and both existing fixtures reproduce **byte-identical** numbers to before
+this change (1 card each, same completeness/discrepancy counts) — pure regression, no behavior
+change for bundles containing only one identity cluster. A new fixture,
+`backend/tests/fixtures/multiple_distinct_patients_bundle.json` (two Whitfield-pattern duplicates +
+one unrelated Garcia patient, each with their own Condition, Garcia also with a MedicationRequest),
+confirms the actually-new path: 2 cards, Whitfield cluster with its duplicate panel and its own
+Condition, Garcia cluster with zero duplicates and her own Condition + Medication — zero
+cross-contamination between the two. Confirmed in both the raw JSON and a real browser render.
+
 ## Frontend
 
 ### `components/patient-card/` (Iteration 04)
@@ -215,14 +247,18 @@ browser-driven click-through).
   renders nothing if empty. Excluded items get a red-tinted row + "Excluded — not shown as current
   fact" label; every item's `discrepancies` render as `⚠ message` lines. The Excluded section opens
   by default (`defaultOpen`) — the whole point of that bucket is to not require hunting for it.
-- `PatientCard.tsx` — the card itself: name/DOB/identifiers header, a discrepancy-count badge
-  (only shown if > 0), the possible-duplicate panel (only shown if any), then one `ResourceSection`
-  per bucket in a fixed order (Encounters, Conditions, Active Medications, Past Medications,
-  Allergies, Observations, Excluded).
+- `PatientCard.tsx` — the card itself: name/DOB/identifiers header, a `completeness_percentage`
+  badge (always shown; color-coded green ≥90 / amber ≥50 / red below — a visual scale only, not a
+  clinical judgment) plus a discrepancy-count badge (shown only if > 0) stacked underneath, the
+  possible-duplicate panel (only shown if any), then one `ResourceSection` per bucket in a fixed
+  order (Encounters, Conditions, Active Medications, Past Medications, Allergies, Observations,
+  Excluded).
 
 Rendered on `/patient-record-processing` below the existing structural-validation summary
 (Iteration 03's valid/invalid badge + counts) — both stay visible; they answer different questions
 ("does it parse" vs. "what does the patient's record actually look like, with issues surfaced").
+Iteration 06: `page.tsx` maps `validationReport.patients` (an array) to one `<PatientCard>` per
+entry, keyed by `patient_id` — was a single optional card before.
 
 ### Layout (Iteration 01)
 

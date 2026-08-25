@@ -125,6 +125,37 @@ endpoint to hit directly:
   errors, both duplicates, all 5 excluded items) — confirms the upload path and the Load Sample
   File path converge on the exact same downstream behavior once a bundle is in state.
 
+### Phase 02 — Iteration 06: completeness indicator (MVP gap-closing)
+
+Triggered by checking `ProjectPlan.md`'s Must Have list — the frontend didn't literally surface
+"completeness" anywhere (only a discrepancy count). Added `completeness_percentage` to
+`PatientCard`, verified against three known-quantity inputs rather than trusting the formula in
+isolation:
+
+- Real bundle → `33` — hand-verified: 5 clean items (`encounter-001`, `condition-001`,
+  `observation-001`, `medicationrequest-001`, `medicationrequest-002`) out of 15 total.
+- `fully_valid_bundle.json` → `100` — all 6 items clean.
+- `fully_invalid_bundle.json` → `10` — hand-verified: only `medicationrequest-003` (past
+  medications, zero discrepancies) out of 10 total is clean.
+- Rendered value re-confirmed in a real browser (`claude-in-chrome`) matches the API value exactly
+  ("33% complete," red badge since < 50).
+
+### Phase 02 — Iteration 06, second pass: multiple distinct patients
+
+- **Regression check first, before anything new**: real bundle + both existing fixtures re-run
+  through `/validate` — all three produced byte-identical `completeness_percentage`,
+  `discrepancy_count`, and `possible_duplicates` counts to before the clustering change. Confirms
+  the new code path doesn't alter behavior for any bundle containing only one identity cluster
+  (which is all three of the previously-existing test inputs).
+- New fixture `backend/tests/fixtures/multiple_distinct_patients_bundle.json` — two
+  Whitfield-pattern Patient resources (same match rule as the real bundle) + one unrelated Garcia
+  patient, each cluster with its own Condition (Garcia also a MedicationRequest). Verified via raw
+  JSON: exactly 2 `patients` entries; Whitfield cluster carries its duplicate panel + only its own
+  Condition; Garcia cluster carries zero duplicates + only her own Condition/Medication — no
+  resource leaked across clusters.
+- Re-verified in a real browser (`claude-in-chrome`, via `file_upload`): both cards render
+  side-by-side with correct content, matching the API response exactly.
+
 ## Automated coverage
 
 None yet. First candidates, once written:
@@ -139,8 +170,11 @@ None yet. First candidates, once written:
   status-exclusion per resource type including the "stopped ≠ excluded" distinction, every
   `discrepancies.py` check in isolation, the invariant-violation detection, the duplicate-patient-
   link flag). Currently only covered end-to-end (real bundle in, full response checked), but
-  `backend/tests/fixtures/{fully_valid,fully_invalid}_bundle.json` now exist as ready-made inputs
-  for exactly this once a framework is chosen — no per-function unit tests yet.
+  `backend/tests/fixtures/{fully_valid,fully_invalid,multiple_distinct_patients}_bundle.json` now
+  exist as ready-made inputs for exactly this once a framework is chosen — no per-function unit
+  tests yet. `same_person()`/`cluster_patients()` specifically deserve direct unit coverage of
+  their edge cases (no name at all, name matches but birthDate absent on one side, three-way
+  transitive clustering) beyond what the fixtures exercise end-to-end.
 - Frontend: not yet planned in detail: likely component-level tests for the button
   enable/disable wiring once there's enough interactive logic to justify the setup cost.
 

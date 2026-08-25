@@ -70,3 +70,10 @@ class PatientCard(BaseModel):
     # Sum of every discrepancy across every item, plus one per possible_duplicate — a single
     # number for the card header ("N discrepancies observed").
     discrepancy_count: int = 0
+
+    # % of clinical resources on this card (across every bucket, including excluded) that are
+    # BOTH non-excluded AND discrepancy-free. Deliberately does not fold in the possible-duplicate
+    # flag — that's a reconciliation-status concern, kept in its own panel, not conflated into a
+    # single number with per-resource data quality. 100 when there are no clinical resources at
+    # all (nothing to be incomplete about).
+    completeness_percentage: int = 100
