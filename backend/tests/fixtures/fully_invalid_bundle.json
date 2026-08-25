@@ -1,0 +1,350 @@
+{
+  "resourceType": "Bundle",
+  "id": "test-bundle-fully-invalid",
+  "type": "collection",
+  "timestamp": "2026-01-15T09:00:00Z",
+  "total": 17,
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:invalid-patient-x",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "invalid-patient-x",
+        "meta": {
+          "profile": ["http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"]
+        },
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+            "extension": [{ "url": "text", "valueString": "White" }]
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
+            "extension": [{ "url": "text", "valueString": "Not Hispanic or Latino" }]
+          }
+        ],
+        "identifier": [
+          { "system": "http://centaurihealth.example.org/mrn", "value": "MRN-77001" },
+          { "system": "http://hl7.org/fhir/sid/us-ssn", "value": "***-**-9999" }
+        ],
+        "active": true,
+        "name": [{ "use": "official", "family": "Okafor", "given": ["Chidi"] }],
+        "gender": "male",
+        "birthDate": "1970-05-20",
+        "address": [{ "city": "Fairhaven", "state": "OH" }]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-patient-y",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "invalid-patient-y",
+        "identifier": [{ "system": "http://centaurihealth.example.org/mrn", "value": "MRN-77001-A" }],
+        "active": true,
+        "name": [{ "use": "official", "family": "Okafor", "given": ["Chidi"] }],
+        "gender": "male",
+        "birthDate": "1970-05"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-patient-z",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "invalid-patient-z",
+        "identifier": [],
+        "active": true,
+        "name": [{ "use": "official", "family": "Okafor", "given": ["C"] }],
+        "gender": "male",
+        "birthDate": "1970"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-encounter-1",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "invalid-encounter-1",
+        "status": "entered-in-error",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": { "reference": "Patient/invalid-patient-x" },
+        "period": { "start": "2025-12-01T08:00:00Z" }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-condition-1",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "invalid-condition-1",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "inactive",
+              "display": "Inactive"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "entered-in-error",
+              "display": "Entered in Error"
+            }
+          ]
+        },
+        "code": {
+          "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "J45.909" }]
+        },
+        "subject": { "reference": "Patient/invalid-patient-y" },
+        "encounter": { "reference": "Encounter/invalid-encounter-does-not-exist" },
+        "onsetDateTime": "2020"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-condition-2",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "invalid-condition-2",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed",
+              "display": "Confirmed"
+            }
+          ]
+        },
+        "code": {
+          "coding": [
+            { "system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "M54.5", "display": "Low back pain" }
+          ]
+        },
+        "subject": { "reference": "Patient/completely-unrelated-patient-not-in-bundle" },
+        "onsetDateTime": "2024-03-01T00:00:00Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-observation-1",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "invalid-observation-1",
+        "status": "entered-in-error",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "2160-0" }]
+        },
+        "subject": { "reference": "Patient/invalid-patient-x" },
+        "performer": [{ "reference": "Practitioner/invalid-practitioner-does-not-exist" }],
+        "effectiveDateTime": "2025-11-01T10:00:00Z",
+        "valueQuantity": { "value": 99.9, "unit": "mg/dL", "system": "http://unitsofmeasure.org", "code": "mg/dL" }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-observation-2",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "invalid-observation-2",
+        "status": "final",
+        "code": {
+          "coding": [{ "system": "http://loinc.org", "code": "29463-7", "display": "Body weight" }]
+        },
+        "subject": { "reference": "Patient/invalid-patient-z" },
+        "effectiveDateTime": "2025-11-01T10:05:00Z",
+        "valueQuantity": { "value": 68.4, "unit": "kg", "system": "http://unitsofmeasure.org", "code": "kg" }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-medicationrequest-1",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "invalid-medicationrequest-1",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [{ "system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "310965" }]
+        },
+        "subject": { "reference": "Patient/invalid-patient-y" },
+        "authoredOn": "2025-10-15T09:00:00Z",
+        "dosageInstruction": [{ "text": "As directed" }]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-medicationrequest-2",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "invalid-medicationrequest-2",
+        "status": "entered-in-error",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "197361",
+              "display": "Lisinopril 10 MG Oral Tablet"
+            }
+          ]
+        },
+        "subject": { "reference": "Patient/invalid-patient-x" },
+        "authoredOn": "2025-09-01T09:00:00Z",
+        "dosageInstruction": [{ "text": "Take one tablet by mouth once daily" }]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-medicationrequest-3",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "invalid-medicationrequest-3",
+        "status": "stopped",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "310965",
+              "display": "Metformin 500 MG Oral Tablet"
+            }
+          ]
+        },
+        "subject": { "reference": "Patient/invalid-patient-x" },
+        "authoredOn": "2022",
+        "dosageInstruction": [{ "text": "Twice daily with meals" }]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-allergyintolerance-1",
+      "resource": {
+        "resourceType": "AllergyIntolerance",
+        "id": "invalid-allergyintolerance-1",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+              "code": "resolved",
+              "display": "Resolved"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification",
+              "code": "entered-in-error",
+              "display": "Entered in Error"
+            }
+          ]
+        },
+        "code": {
+          "coding": [
+            { "system": "http://snomed.info/sct", "code": "9999-1", "display": "Sulfa drugs" }
+          ]
+        },
+        "patient": { "reference": "Patient/invalid-patient-x" },
+        "recordedDate": "2015"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-allergyintolerance-2",
+      "resource": {
+        "resourceType": "AllergyIntolerance",
+        "id": "invalid-allergyintolerance-2",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification",
+              "code": "unconfirmed",
+              "display": "Unconfirmed"
+            }
+          ]
+        },
+        "code": {
+          "coding": [{ "system": "http://snomed.info/sct", "code": "91935009" }]
+        },
+        "criticality": "unable-to-assess",
+        "patient": { "reference": "Patient/invalid-patient-x" },
+        "recordedDate": "2018"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-allergyintolerance-3",
+      "resource": {
+        "resourceType": "AllergyIntolerance",
+        "id": "invalid-allergyintolerance-3",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification",
+              "code": "confirmed",
+              "display": "Confirmed"
+            }
+          ]
+        },
+        "code": {
+          "coding": [
+            { "system": "http://snomed.info/sct", "code": "300916003", "display": "Latex allergy" }
+          ]
+        },
+        "criticality": "low",
+        "patient": { "reference": "Patient/invalid-patient-z" },
+        "recordedDate": "2019"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-broken-entry-1",
+      "resource": null
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-unsupported-type-1",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "invalid-procedure-1",
+        "status": "completed",
+        "subject": { "reference": "Patient/invalid-patient-x" }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:invalid-missing-required-field-1",
+      "resource": {
+        "resourceType": "Condition",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "subject": { "reference": "Patient/invalid-patient-x" }
+      }
+    }
+  ]
+}

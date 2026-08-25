@@ -107,3 +107,12 @@ Anything not yet decided is marked **open** rather than silently resolved.
 - Whether `POST /validate` is the final endpoint name/shape long-term, or gets renamed/split once
   HIL/manual-mode (custom upload, edit-and-resubmit) is built — not revisited yet, MVP naming has
   held so far.
+- **A resource whose `subject`/`patient` reference matches neither the canonical patient nor any
+  flagged duplicate is currently silently absent from `PatientCard`** — not in its type bucket, not
+  in `excluded`, no trace at all. Found while building `backend/tests/fixtures/
+  fully_invalid_bundle.json` (its `invalid-condition-2` exercises exactly this). Current behavior
+  is intentional as originally coded (an unrelated resource "doesn't belong on this card"), but it
+  cuts against the project's general "never silently drop, always say so" posture applied
+  everywhere else. Not yet decided whether this needs its own discrepancy kind (e.g.
+  `orphaned_patient_reference`) surfaced somewhere on the card — revisit before considering the
+  discrepancy catalog complete.

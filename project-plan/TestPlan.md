@@ -82,6 +82,29 @@ iteration before handing back for review.
   non-excluded item's discrepancies render correctly alongside a clean zero-discrepancy item in the
   same list.
 
+### Phase 02 — Iteration 04 refinement: hand-built edge-case fixtures
+
+Two fixtures added at `backend/tests/fixtures/` for manual review and future automated-test use
+(no test framework chosen yet — see below):
+
+- **`fully_valid_bundle.json`** — one Patient (no duplicate), one of each other resource type, all
+  clean (confirmed/active/final statuses, every coding has a `display`, every reference resolves).
+  Verified: `discrepancy_count: 0`, `possible_duplicates: []`, zero structural errors. **This is
+  the first verification of the single-Patient/no-duplicate code path** — previously flagged here
+  as untested in isolation (the real bundle always has two Patients).
+- **`fully_invalid_bundle.json`** — three Patients (two duplicates), one instance of every
+  discrepancy kind, three resources whose subject points at the *other* duplicate (not just
+  MedicationRequest, which is the only case the real bundle exercises), a `Condition` whose subject
+  points at a patient not in the bundle at all, and three structural-error entries (missing
+  `resource`, unsupported `resourceType`, resource missing a required field). Verified against the
+  running backend: `valid: false`, 3 structural errors, `discrepancy_count: 23`, every expected
+  discrepancy present.
+- **Finding from building this:** a resource whose subject matches neither the canonical patient
+  nor any flagged duplicate (the `Condition` case above) is silently absent from the entire
+  response — not in its type bucket, not in `excluded`, no trace at all. Works as coded, but cuts
+  against the project's "never silently drop" posture; not yet decided whether this needs its own
+  discrepancy kind. See `Assumptions.md`/Iteration follow-up.
+
 ## Automated coverage
 
 None yet. First candidates, once written:
@@ -95,10 +118,9 @@ None yet. First candidates, once written:
   unit tests in this project (canonical-patient selection with 2+ patients and with only 1,
   status-exclusion per resource type including the "stopped ≠ excluded" distinction, every
   `discrepancies.py` check in isolation, the invariant-violation detection, the duplicate-patient-
-  link flag). Currently only covered end-to-end (real bundle in, full response checked) — no
-  per-function unit tests yet, and no test for a bundle with a *single* Patient (this project's
-  bundle always has two; the single-patient / no-duplicate code path is currently unverified in
-  isolation).
+  link flag). Currently only covered end-to-end (real bundle in, full response checked), but
+  `backend/tests/fixtures/{fully_valid,fully_invalid}_bundle.json` now exist as ready-made inputs
+  for exactly this once a framework is chosen — no per-function unit tests yet.
 - Frontend: not yet planned in detail: likely component-level tests for the button
   enable/disable wiring once there's enough interactive logic to justify the setup cost.
 
