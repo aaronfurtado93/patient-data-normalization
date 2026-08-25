@@ -3,14 +3,28 @@
 import { useState } from "react";
 import Breadcrumb from "@/components/layout/Breadcrumb";
 
-// Iteration 02 scope: Download Sample File, Load Sample File, and Run Validation becoming
-// available once a file is loaded. Upload Custom File / Edit Mode / Download Output are stretch
-// (HIL mode) and stay disabled. Actual validation/normalization logic is a later iteration —
-// Run Validation currently just confirms the enable/disable wiring works.
+// Iteration 02: Download Sample File, Load Sample File, and Run Validation becoming available
+// once a file is loaded. Upload Custom File / Edit Mode / Download Output are stretch (HIL mode)
+// and stay disabled.
+// Iteration 03: Run Validation now calls the real POST /validate endpoint (structural validation
+// against the backend's Pydantic models) and renders the report — no longer a placeholder.
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 const SAMPLE_BUNDLE_FILENAME = "scenario1_fhir_bundle[78].json";
 
 type AsyncState = "idle" | "loading" | "error";
+
+type ValidationIssue = {
+  entry_index: number;
+  resource_type: string | null;
+  resource_id: string | null;
+  message: string;
+};
+
+type ValidationReport = {
+  valid: boolean;
+  resource_counts: Record<string, number>;
+  errors: ValidationIssue[];
+};
 
 async function fetchSampleBundle(): Promise<Record<string, unknown>> {
   const res = await fetch(`${BACKEND_URL}/sample-bundle`);
@@ -25,6 +39,10 @@ export default function PatientRecordProcessingPage() {
   const [loadState, setLoadState] = useState<AsyncState>("idle");
   const [loadedBundle, setLoadedBundle] = useState<Record<string, unknown> | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const [validationState, setValidationState] = useState<AsyncState>("idle");
+  const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   async function handleDownload() {
     setDownloadState("loading");
@@ -47,6 +65,8 @@ export default function PatientRecordProcessingPage() {
 
   async function handleLoad() {
     setLoadState("loading");
+    setValidationReport(null);
+    setValidationError(null);
     try {
       const bundle = await fetchSampleBundle();
       setLoadedBundle(bundle);
@@ -61,8 +81,28 @@ export default function PatientRecordProcessingPage() {
     }
   }
 
-  function handleRunValidation() {
-    setStatusMessage("Validation not yet implemented — lands in a later iteration.");
+  async function handleRunValidation() {
+    if (!loadedBundle) {
+      return;
+    }
+    setValidationState("loading");
+    setValidationError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(loadedBundle),
+      });
+      if (!res.ok) {
+        throw new Error(`backend returned ${res.status}`);
+      }
+      const report: ValidationReport = await res.json();
+      setValidationReport(report);
+      setValidationState("idle");
+    } catch {
+      setValidationState("error");
+      setValidationError("Validation request failed — is the backend running?");
+    }
   }
 
   const primaryButtonClass =
@@ -118,10 +158,10 @@ export default function PatientRecordProcessingPage() {
         <button
           type="button"
           onClick={handleRunValidation}
-          disabled={!loadedBundle}
+          disabled={!loadedBundle || validationState === "loading"}
           className={primaryButtonClass}
         >
-          Run Validation
+          {validationState === "loading" ? "Validating..." : "Run Validation"}
         </button>
 
         <button type="button" disabled className={stretchButtonClass}>
@@ -136,6 +176,46 @@ export default function PatientRecordProcessingPage() {
       {statusMessage && <p className="mt-4 text-sm text-slate-600">{statusMessage}</p>}
       {downloadState === "error" && (
         <p className="mt-2 text-sm text-red-600">Download failed — is the backend running?</p>
+      )}
+      {validationError && <p className="mt-2 text-sm text-red-600">{validationError}</p>}
+
+      {validationReport && (
+        <div className="mt-6 max-w-xl rounded-md border border-slate-200 bg-white p-4">
+          <p
+            className={`text-sm font-semibold ${
+              validationReport.valid ? "text-green-700" : "text-red-700"
+            }`}
+          >
+            {validationReport.valid
+              ? "Bundle is structurally valid."
+              : "Bundle has structural validation issues."}
+          </p>
+
+          {Object.keys(validationReport.resource_counts).length > 0 && (
+            <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-3">
+              {Object.entries(validationReport.resource_counts).map(([type, count]) => (
+                <div key={type} className="flex justify-between gap-2">
+                  <dt>{type}</dt>
+                  <dd className="font-medium text-slate-900">{count}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          {validationReport.errors.length > 0 && (
+            <ul className="mt-4 space-y-2 border-t border-slate-100 pt-3 text-sm text-red-700">
+              {validationReport.errors.map((err, index) => (
+                <li key={index}>
+                  Entry {err.entry_index}
+                  {err.resource_type
+                    ? ` (${err.resource_type}${err.resource_id ? ` / ${err.resource_id}` : ""})`
+                    : ""}
+                  : {err.message}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );

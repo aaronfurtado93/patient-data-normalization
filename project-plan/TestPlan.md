@@ -53,11 +53,27 @@ iteration before handing back for review.
   or scripted check — `curl` can't exercise client-side React state. Relies on Aaron's manual
   browser testing for this iteration, per the established workflow.
 
+### Phase 02 — Iteration 03
+
+- `GET /sample-bundle` piped into `POST /validate` on the real bundle → `valid: true`, exact
+  per-resource-type counts matching the known bundle (`Patient: 2, Encounter: 2, Condition: 3,
+  Observation: 4, MedicationRequest: 3, AllergyIntolerance: 3`), zero errors.
+- `/validate` error paths tested directly: non-Bundle request body → `400` via `BadRequestError`;
+  a bundle with an unsupported `resourceType` (`Procedure`) and a resource missing a required
+  field (`Condition` without `id`) → both reported as separate entries in one response, confirming
+  one bad entry doesn't prevent reporting on the rest.
+- Backend package restructure (routers/core split from the previous iteration) re-verified as
+  still working after adding the new `models/` package and `validation` router.
+
 ## Automated coverage
 
 None yet. First candidates, once written:
 
 - Backend: `GET /sample-bundle` — 200 case, 404 case (bundle path missing/misconfigured).
+- Backend: `POST /validate` — now the strongest automated-test candidate that actually exists:
+  non-Bundle body, unsupported resource type, per-field validation failures (missing required
+  field, wrong type), and the happy path against the real sample bundle. Real branching logic now
+  exists here, unlike the pure-passthrough `/sample-bundle`.
 - Backend, once it exists: the normalization/reconciliation pipeline — canonical-patient
   selection, status-based exclusion bucketing, dangling-reference handling, date-precision
   handling — these are exactly the clinical-data-safety-relevant branches from `Assumptions.md`

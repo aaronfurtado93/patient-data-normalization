@@ -6,6 +6,39 @@ future ones.
 
 ## Backend
 
+### Package structure
+
+```
+backend/app/
+├── main.py            # wiring only: creates the app, registers middleware/exception
+│                       # handlers, includes api_router. No route logic, no exception handling.
+├── core/
+│   ├── errors.py               # AppError hierarchy (BadRequestError, NotFoundError,
+│   │                             ServiceUnavailableError, ...) — route code raises these,
+│   │                             never fastapi.HTTPException directly.
+│   └── exception_handlers.py   # register_exception_handlers(app) — one place, registered
+│                                 once. Every error response (AppError, HTTPException — including
+│                                 the base Starlette one FastAPI's routing raises internally for
+│                                 e.g. unmatched routes, RequestValidationError, or a genuinely
+│                                 unhandled Exception) comes back as
+│                                 {"error": {"code": <str>, "message": <str>}}.
+└── routers/
+    ├── __init__.py     # api_router — aggregates every domain router; main.py includes only this.
+    ├── health.py       # GET /health
+    └── sample_bundle.py  # GET /sample-bundle
+```
+
+**Rule going forward:** one router module per resource/domain (not one giant `main.py` with every
+route inline) — add a new `routers/<name>.py`, register it in `routers/__init__.py`. Route code
+raises an `AppError` subclass for expected failure cases (e.g. `NotFoundError`); add a new subclass
+to `core/errors.py` if none fits rather than reaching for `HTTPException`.
+
+**Gotcha worth keeping documented:** the exception handler for "unhandled HTTP errors" must be
+registered on `starlette.exceptions.HTTPException` (the base class), not `fastapi.HTTPException`
+(a subclass) — FastAPI's own routing layer raises the *base* class directly for things like an
+unmatched route, and a handler registered only for the subclass silently misses it (confirmed by
+testing: an unknown route came back as FastAPI's default `{"detail":"Not Found"}` until fixed).
+
 ### `GET /health`
 
 Returns `{"status": "ok"}`. No parameters, no auth. Liveness/connectivity check only.
@@ -22,11 +55,79 @@ into the frontend build.
   application/json`.
 - **Response 404:** `{"detail": "Sample bundle not found on the server."}` if the file isn't where
   expected (e.g. the Compose volume mount is missing).
-- **File resolution:** `Path(__file__).resolve().parent.parent / "inputdata" /
-  "scenario1_fhir_bundle[78].json"` — i.e. `backend/app/main.py` → `parent.parent` is the
-  container's `/app` WORKDIR, where `docker-compose.yml` bind-mounts the repo's `inputdata/`
+- **File resolution:** `Path(__file__).resolve().parents[2] / "inputdata" /
+  "scenario1_fhir_bundle[78].json"` — i.e. `backend/app/routers/sample_bundle.py` → `parents[2]` is
+  the container's `/app` WORKDIR, where `docker-compose.yml` bind-mounts the repo's `inputdata/`
   read-only. **Only valid when run via Docker Compose** (per `Assumptions.md`'s "Compose is the run
   method" decision) — there's no fallback path for running `uvicorn` directly outside a container.
+- **404 case now raises `NotFoundError`** (from `app.core.errors`), not `HTTPException` directly —
+  comes back through the shared error envelope like any other `AppError`.
+
+### `app/models/` — Pydantic v2 resource models (Iteration 03)
+
+One module per FHIR resource type actually present in the bundle, plus shared building blocks.
+Modeling rules are documented once in `app/models/__init__.py`'s docstring (worth reading in full)
+— the two that matter most:
+
+- Every `date`/`dateTime` field (`birthDate`, `onsetDateTime`, `effectiveDateTime`, `authoredOn`,
+  `recordedDate`) is typed `str`, not Pydantic's `date`/`datetime` types, because FHIR allows
+  partial precision (`"1958"`, `"2019"`, `"2020"`) that stdlib date types reject outright. This is
+  the direct implementation of `Assumptions.md`'s "partial dates shown at original precision"
+  rule — modeling them as anything else would silently violate it.
+- `Condition`/`AllergyIntolerance` deliberately do **not** enforce the FHIR invariants they violate
+  in this bundle (`con-3`/`ait-1` — see `Knowledge.md`) — the models stay permissive so the
+  violating resources (`condition-002`, `allergyintolerance-002`) still parse and can be reported
+  on, rather than being rejected as unparseable. Enforcing the invariant here would fight the
+  project's own "surface the real data" posture.
+
+```
+app/models/
+├── __init__.py              # modeling rules docstring — read this first
+├── common.py                 # Coding, CodeableConcept, Identifier, Reference, Period,
+│                               HumanName, ContactPoint, Address, Quantity, Meta, Extension
+├── patient.py                 # Patient, PatientLink
+├── encounter.py                # Encounter
+├── condition.py                 # Condition
+├── observation.py                # Observation, ObservationComponent
+├── medication_request.py          # MedicationRequest, DosageInstruction
+├── allergy_intolerance.py          # AllergyIntolerance
+├── bundle.py                        # Bundle (discriminated-union entries) + RESOURCE_MODELS dict
+└── validation.py                     # ValidationIssue, ValidationReport — /validate's response shape
+```
+
+`bundle.py` exposes resource typing two ways, deliberately:
+- **`RESOURCE_MODELS`** (`dict[str, type[BaseModel]]`) — used by `/validate` to validate each
+  bundle entry individually via `model.model_validate(...)`, so one malformed entry doesn't prevent
+  reporting on the rest. This is what the endpoint actually uses.
+- **`Bundle`** (with `AnyResource`, a `Field(discriminator="resourceType")` union) — the canonical
+  typed shape of an entire bundle, for anywhere that wants all-or-nothing validation instead.
+
+### `POST /validate` (Iteration 03)
+
+Structural validation only — confirmed with Aaron before building: does the bundle parse into the
+models above? Does **not** flag entered-in-error/inactive resources, dangling references, missing
+`display`, or duplicate patients — that's the reconciliation/normalization pipeline's job, not yet
+built.
+
+- **Request body:** the full bundle as raw JSON (`dict[str, Any]` — not bound to the `Bundle`
+  Pydantic model directly, so a malformed request doesn't produce FastAPI's generic 422 instead of
+  this endpoint's own structured report).
+- **400** (`BadRequestError`) if `resourceType != "Bundle"` or `entry` isn't an array — these are
+  "not a bundle at all" cases, not per-resource issues, so they short-circuit before iterating.
+- **200** always otherwise, with `ValidationReport`:
+  - `valid: bool` — `not errors`.
+  - `resource_counts: dict[str, int]` — successfully-parsed count per `resourceType`.
+  - `errors: list[ValidationIssue]` — one entry per problem: `entry_index`, `resource_type` /
+    `resource_id` (best-effort, `None` if unavailable), `message`. Covers three cases: entry
+    missing a `resource` object, unsupported `resourceType` (not in `RESOURCE_MODELS`), and a
+    resource that fails `model_validate` (message built from `ValidationError.errors()`, one
+    `loc: msg` per violation, semicolon-joined).
+- **Verified against the real bundle:** `GET /sample-bundle` piped into `POST /validate` returns
+  `valid: true`, exact per-type counts (`Patient: 2, Encounter: 2, Condition: 3, Observation: 4,
+  MedicationRequest: 3, AllergyIntolerance: 3`), zero errors — matches the known bundle contents
+  from `Knowledge.md`. Also verified the three error paths directly (non-Bundle body → 400;
+  unsupported resource type + a resource missing a required field → both reported in one
+  response, not just the first).
 
 ## Frontend
 
@@ -60,9 +161,10 @@ into the frontend build.
   - **Load**: fetches the bundle into `loadedBundle` state, shows an entry count in
     `statusMessage` if `bundle.entry` is an array (defensive — doesn't assume shape beyond what's
     needed to display a count).
-  - **Run Validation**: enabled only once `loadedBundle` is set; click handler currently just sets
-    a placeholder `statusMessage` — no validation logic exists yet (explicitly out of scope for
-    Iteration 02, see `Iteration-02.md`).
+  - **Run Validation** (Iteration 03): enabled only once `loadedBundle` is set; POSTs it to
+    `/validate` and renders the `ValidationReport` — valid/invalid badge, per-resource-type counts,
+    and any `ValidationIssue`s. Network-level failures go to a separate `validationError` state,
+    kept distinct from both the report's own `errors` array and the Load-related `statusMessage`.
   - **Upload Custom File / Edit Mode / Download Output**: permanently `disabled`, styled distinctly
     (`stretchButtonClass`) from the two active buttons — HIL-mode stretch goals per
     `Assumptions.md`.
@@ -74,4 +176,6 @@ into the frontend build.
 - `/patient-summary` (or equivalent) — the actual normalization/reconciliation pipeline and its
   response shape. Still open per `Assumptions.md`; will get its own LLD section once that iteration
   starts.
-- What "Run Validation" actually does once implemented for real.
+- The actual normalization/reconciliation pipeline that would run *after* structural validation
+  passes — `/validate` only confirms the data parses; nothing yet acts on canonical-patient
+  selection, status-based exclusion, or duplicate detection.
