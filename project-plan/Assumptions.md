@@ -127,6 +127,22 @@ Anything not yet decided is marked **open** rather than silently resolved.
     run_validation`) as any other bundle — **every** patient card on screen is recomputed from the
     resulting bundle, not just the merged one, so unrelated patients' completeness/discrepancy
     numbers are confirmed unchanged rather than left stale.
+- **Download Output produces a genuinely clean bundle by default** (Iteration 07, final step) —
+  both filter checkboxes ("include items with discrepancies," "include entries marked as
+  Excluded") default **off**, so the unmodified default download contains only current-fact,
+  discrepancy-free clinical resources. Filters from the *current working bundle* (post-merge if a
+  reconcile was applied, otherwise as loaded/validated), using the latest validation report's
+  per-item classification — not a fresh re-derivation, so it always reflects what's on screen.
+  - **Every `Patient` resource is always included**, regardless of either toggle — the toggles
+    apply only to clinical resources (Encounter/Condition/Observation/MedicationRequest/
+    AllergyIntolerance). A patient itself is never "excluded" or "has a discrepancy" in the same
+    sense an individual clinical resource is (see `PatientCard`'s shape), so there's no equivalent
+    toggle for omitting a patient — that would need a different, unasked-for decision (e.g. "leave
+    out patient-002 entirely") this feature doesn't attempt.
+  - The two toggles are independent, not layered: an excluded item is governed only by "include
+    excluded," never by "include with discrepancies," even though every excluded item also carries
+    at least one discrepancy (its exclusion reason) — checking only "include with discrepancies"
+    does **not** pull excluded items back in.
 
 ## Scope
 

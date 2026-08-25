@@ -6,6 +6,7 @@ import PatientCard from "@/components/patient-card/PatientCard";
 import MergeView, { type MergeSelections } from "@/components/patient-card/MergeView";
 import type { PatientCardData } from "@/components/patient-card/types";
 import { buildReconciledBundle } from "@/lib/reconcile";
+import { buildCleanOutputBundle } from "@/lib/downloadOutput";
 
 // Iteration 02: Download Sample File, Load Sample File, and Run Validation becoming available
 // once a file is loaded. Upload Custom File / Edit Mode / Download Output are stretch (HIL mode)
@@ -27,7 +28,13 @@ import { buildReconciledBundle } from "@/lib/reconcile";
 // reconstruct real resources) + the reviewer's selections; POSTed to the new POST /reconcile,
 // which runs the exact same validation pipeline as /validate. On success, loadedBundle and
 // validationReport are both replaced with the reconciled result, so every card (not just the
-// merged one) reflects the update. Download Output remains disabled — still ahead.
+// merged one) reflects the update.
+// Iteration 07, final step: Download Output is real — lib/downloadOutput.ts filters the current
+// working bundle (post-merge if applied, otherwise as loaded/validated) against the latest
+// validationReport's discrepancy/excluded classification, gated by two checkboxes (both default
+// OFF, so the default download is genuinely "clean"). Per Aaron's refinement: restricted to HIL
+// mode — the button stays visible but disabled+tooltipped outside HIL (matching this app's usual
+// idiom), while the Download Options checkboxes are hidden entirely outside HIL, not just disabled.
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 const SAMPLE_BUNDLE_FILENAME = "scenario1_fhir_bundle[78].json";
 
@@ -48,6 +55,13 @@ type ValidationReport = {
   // single optional `patient` before — renamed/pluralized to match).
   patients: PatientCardData[];
 };
+
+function formatTimestampForFilename(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(
+    date.getHours()
+  )}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+}
 
 async function fetchSampleBundle(): Promise<Record<string, unknown>> {
   const res = await fetch(`${BACKEND_URL}/sample-bundle`);
@@ -76,6 +90,10 @@ export default function PatientRecordProcessingPage() {
   // Iteration 07 step 3: state for the actual POST /reconcile call.
   const [applyingMerge, setApplyingMerge] = useState(false);
   const [applyMergeError, setApplyMergeError] = useState<string | null>(null);
+  // Iteration 07 final step: Download Output settings — both default OFF so the default export is
+  // genuinely clean (no discrepancy-flagged or excluded items) unless explicitly opted into.
+  const [includeWithDiscrepancies, setIncludeWithDiscrepancies] = useState(false);
+  const [includeExcluded, setIncludeExcluded] = useState(false);
 
   // Shared by Load Sample File and Upload Custom File — one place that puts a bundle into state
   // and resets whatever the previous bundle's validation run left behind.
@@ -178,7 +196,7 @@ export default function PatientRecordProcessingPage() {
       setValidationState("idle");
     } catch {
       setValidationState("error");
-      setValidationError("Validation request failed — is the backend running?");
+      setValidationError("Validation request failed");
     }
   }
 
@@ -210,17 +228,34 @@ export default function PatientRecordProcessingPage() {
       setApplyMergeError(
         err instanceof Error && err.message.startsWith("Could not find")
           ? err.message
-          : "Reconcile request failed — is the backend running?"
+          : "Reconcile request failed"
       );
     } finally {
       setApplyingMerge(false);
     }
   }
 
+  function handleDownloadOutput() {
+    if (!loadedBundle || !validationReport) {
+      return;
+    }
+    const cleanBundle = buildCleanOutputBundle(loadedBundle, validationReport, {
+      includeWithDiscrepancies,
+      includeExcluded,
+    });
+    const blob = new Blob([JSON.stringify(cleanBundle, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `fhir-r4-patient-record-${formatTimestampForFilename(new Date())}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   const primaryButtonClass =
     "rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300";
-  const stretchButtonClass =
-    "cursor-not-allowed rounded-md border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-400";
 
   return (
     <div>
@@ -288,6 +323,11 @@ export default function PatientRecordProcessingPage() {
             <option value="hil">HIL</option>
           </select>
         </label>
+        {validationReport !== null && (
+          <span className="text-xs text-slate-500">
+            To change validation mode, load/upload a file.
+          </span>
+        )}
 
         <button
           type="button"
@@ -298,14 +338,48 @@ export default function PatientRecordProcessingPage() {
           {validationState === "loading" ? "Validating..." : "Run Validation"}
         </button>
 
-        <button type="button" disabled className={stretchButtonClass}>
-          Download Output (Coming Soon, for HIL mode)
+        <button
+          type="button"
+          onClick={handleDownloadOutput}
+          disabled={validationMode !== "hil" || !validationReport}
+          title={
+            validationMode !== "hil"
+              ? "Download Output is available in HIL mode only."
+              : !validationReport
+                ? "Run Validation first."
+                : undefined
+          }
+          className={primaryButtonClass}
+        >
+          Download Output
         </button>
       </div>
 
+      {validationMode === "hil" && (
+        <div className="mt-3 flex flex-wrap items-center gap-4">
+          Download Options:
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={includeWithDiscrepancies}
+              onChange={(e) => setIncludeWithDiscrepancies(e.target.checked)}
+            />
+            Include items with discrepancies
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={includeExcluded}
+              onChange={(e) => setIncludeExcluded(e.target.checked)}
+            />
+            Include entries marked as Excluded
+          </label>
+        </div>
+      )}
+
       {statusMessage && <p className="mt-4 text-sm text-slate-600">{statusMessage}</p>}
       {downloadState === "error" && (
-        <p className="mt-2 text-sm text-red-600">Download failed — is the backend running?</p>
+        <p className="mt-2 text-sm text-red-600">Download failed</p>
       )}
       {uploadError && <p className="mt-2 text-sm text-red-600">{uploadError}</p>}
       {validationError && <p className="mt-2 text-sm text-red-600">{validationError}</p>}

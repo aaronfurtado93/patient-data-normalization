@@ -5,8 +5,11 @@ type SidebarProps = {
   onClose: () => void;
 };
 
-// Single menu item per Iteration 01 scope. Grow this list as more pages land.
-const MENU_ITEMS = [{ label: "Patient Record Processing", href: "/patient-record-processing" }];
+// Grow this list as more pages land.
+const MENU_ITEMS = [
+  { label: "Patient Record Processing", href: "/patient-record-processing" },
+  { label: "User Guide", href: "/user-guide" },
+];
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
   if (!open) {

@@ -243,3 +243,110 @@ total for this bundle) and correct singular/plural grammar.
 
 **Suggested commit message:**
 `feat: show discrepancy count warning on collapsed accordion sections`
+
+---
+
+## Step 5: Download Output — clean FHIR R4 export
+
+**Feedback:** "based on the Reconciled/Merged result we now need to generate a clean r4 FHIR json
+object. We can use the Download Output button... There should be additional settings for the
+Download Output: [ ] include with discrepencies [ ] include entries marked as Excluded." Followed
+by three refinements: "Download Output only available in HIL mode so button only enabled in HIL
+mode. (show tooltip) / Download Options: should also be only only visible in HIL mode. / download
+file name format fhir-r4-patient-record-\<yyyy\>-\<mm\>-\<dd\>-\<hh\>-\<mm\>-\<ss\>.json."
+
+**Frontend (`frontend/lib/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `downloadOutput.ts` | added | `buildCleanOutputBundle(rawBundle, report, options)` — cross-references the raw loaded/reconciled bundle (display types don't carry full resource content) against the latest validation report's discrepancy/excluded classification. Patients always included; clinical resources filtered by `{ includeWithDiscrepancies, includeExcluded }`, both default `false` so the default export is discrepancy-free and exclusion-free. Returns a `Bundle`/`collection` with a fresh `timestamp`. |
+
+**Frontend (`frontend/app/patient-record-processing/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `page.tsx` | modified | `includeWithDiscrepancies`/`includeExcluded` checkbox state; `handleDownloadOutput()` builds the bundle via `buildCleanOutputBundle` against whichever bundle is currently loaded (post-merge if a merge was applied) and triggers a browser download. `formatTimestampForFilename(date)` produces the `yyyy-mm-dd-hh-mm-ss` suffix; filename is `fhir-r4-patient-record-<timestamp>.json`. Per the refinement: the button stays visible but is `disabled` + carries an explanatory `title` tooltip outside HIL mode or before validation has run (matching this app's existing disabled-button idiom, e.g. Validation Mode); the Download Options checkboxes are wrapped in `{validationMode === "hil" && (...)}` and don't render at all outside HIL mode, rather than just being disabled. |
+
+**Decisions this iteration**
+
+- Both Download Options checkboxes default to unchecked/off — the default export is the strictest
+  cut (patients + clean, non-excluded clinical resources only). Exporting discrepancy-bearing or
+  excluded data is opt-in, never the default, consistent with Rule 4 (no data shown as more
+  complete/certain than it is) extended to the export path.
+- Download Output reads whichever bundle is currently held client-side (`loadedBundle`) — the
+  original as-loaded bundle in Default mode, or the reconciled bundle after a merge in HIL mode.
+  It does not re-fetch or re-derive from the backend at export time.
+
+**Verification performed**
+
+- Real browser round trip, Default mode: confirmed Download Output renders disabled/greyed and the
+  Download Options checkboxes do not render at all (not just disabled) — screenshot-verified.
+- Confirmed via `javascript_tool` DOM inspection (more reliable than trying to trigger a hover
+  screenshot for a native `title` tooltip): in Default mode the button's `title` reads exactly
+  "Download Output is available in HIL mode only."; after switching to HIL and loading a fresh file
+  but before running validation, `title` reads "Run Validation first."; after a real HIL-mode
+  Run Validation, `disabled` is `false` and `title` is empty.
+- Downloaded a real file via a real button click and read it back from `~/Downloads`:
+  `fhir-r4-patient-record-2026-08-25-19-28-32.json` — filename format matches spec exactly, and the
+  content parses as a valid `Bundle`/`collection` with `total` matching `entry.length` (7/7 in this
+  run, patients + non-discrepant/non-excluded clinical resources per the default unchecked
+  options).
+- Hit and resolved the session's known browser-click-timing flakiness again (Load Sample
+  File/Run Validation occasionally not registering on first click after a navigation) — worked
+  around the same way as prior iterations, by re-verifying page state via DOM read before
+  re-clicking, not by assuming the click "probably worked."
+
+**Suggested commit message:**
+`feat: add Download Output — clean FHIR R4 export gated to HIL mode with discrepancy/excluded opt-in`
+
+---
+
+## Step 6: mode-change discoverability hint + User Guide page
+
+**Feedback (two enhancements, given live during Step 5 verification):**
+1. "To change validation mode upload/load a file" — the existing lock on the Validation Mode
+   dropdown (from Step 1) was only explained via a hover-only `title` tooltip, which this session's
+   own testing had just gotten confused by — not discoverable enough.
+2. "Add another widget and Page: User Guide with instructions on how to best use all available
+   application features."
+
+**Frontend (`frontend/app/patient-record-processing/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `page.tsx` | modified | Added a visible inline hint ("To change validation mode, load/upload a file.") next to the Validation Mode dropdown, shown whenever a validation report exists (i.e. whenever the dropdown is locked) — supplements the existing `title` tooltip rather than replacing it, since the tooltip stays useful for keyboard/hover users. |
+
+**Frontend (`frontend/app/`, `frontend/components/`)**
+
+| File | Change | Description |
+|---|---|---|
+| `app/user-guide/page.tsx` | added | New static route. Walks through all five current features in order — loading a bundle, choosing Validation Mode, Run Validation, HIL merge, Download Output — described only in terms of what the app actually does today, no aspirational content. |
+| `app/page.tsx` | modified | Dashboard now renders both `ProcessingWidget` and the new `UserGuideWidget` side by side. |
+| `components/dashboard/UserGuideWidget.tsx` | added | Second dashboard card, same visual pattern as `ProcessingWidget.tsx`, links to `/user-guide`. |
+| `components/layout/Sidebar.tsx` | modified | Added a "User Guide" entry to the menu list alongside "Patient Record Processing". |
+
+**repo-root/**
+
+| File | Change | Description |
+|---|---|---|
+| `.gitignore` | modified | **Unrelated but load-bearing fix found during this step's `git status` check**: the generic Python-template `lib/` ignore rule (added at scaffolding time for a Python venv `lib/` dir that was never actually created at repo root) was unintentionally also matching `frontend/lib/` — meaning `frontend/lib/reconcile.ts` and `frontend/lib/downloadOutput.ts` (core source for the Step 3 merge feature and this iteration's Download Output feature) had never actually been tracked by git in any prior commit, despite being real, working, reviewed source files. Anchored the rule to `/lib/` (repo-root only) so it no longer shadows `frontend/lib/`. Confirmed via `git status --short --ignored` that `frontend/lib/` is now correctly picked up as untracked-and-stageable, and that no other legitimate ignore target was affected (`find . -maxdepth 2 -type d -name lib` shows only `frontend/lib`). |
+
+**Decisions this iteration**
+
+- The `.gitignore` fix is flagged here rather than folded silently into the file table above
+  because of its consequence: `reconcile.ts`/`downloadOutput.ts` were undetected-uncommitted across
+  two prior committed iterations (Step 3 and this step). Nothing in those files needed to change —
+  this is a repo-hygiene finding, not a data-handling one — but it's surfaced explicitly per the
+  standing "flag it, don't silently fix it" instinct, since it affects what actually lands in
+  Aaron's next commit.
+
+**Verification performed**
+
+- Real browser: Dashboard shows both widget cards; `/user-guide` renders the full guide;
+  hamburger-menu sidebar shows both entries; clicked through Dashboard → User Guide widget →
+  confirmed correct navigation.
+- Confirmed via `javascript_tool` that the inline hint is absent before a validation report exists
+  and present immediately after Run Validation succeeds.
+
+**Suggested commit message:**
+`fix: stop frontend/lib from being gitignored; feat: add mode-change hint + User Guide page/widget`

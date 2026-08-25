@@ -273,6 +273,65 @@ with discrepancies show the correct count — Conditions ⚠2, Allergies ⚠3, O
 Excluded ⚠8 (matches the already-verified 18-discrepancy total), and correct singular/plural
 grammar (patient-002's "Active Medications" shows "⚠ 1 discrepancy").
 
+### Phase 02 — Iteration 07, final step: Download Output
+
+Verified by actually downloading and reading the resulting file back from disk (`~/Downloads`), not
+just inspecting UI state — the strongest verification level used in this project for a
+file-producing feature:
+
+- Confirmed `~/Downloads` was readable before testing (checked, not assumed).
+- Default settings (both checkboxes unchecked), real bundle: downloaded file has `total: 7`,
+  contains both `Patient` resources plus exactly the 5 fully-clean clinical resources
+  (`encounter-001`, `condition-001`, `observation-001`, `medicationrequest-001`,
+  `medicationrequest-002`) — every discrepancy-flagged or excluded resource correctly absent.
+- Toggled "Include entries marked as Excluded" on, re-downloaded: `total: 11` (`7 + 4`), the 4 new
+  entries being exactly the previously-excluded set (`encounter-002`, `condition-002`,
+  `observation-004`, `allergyintolerance-002`) — confirms the toggle works and that
+  "include with discrepancies" (still unchecked) correctly did **not** also pull in the
+  discrepancy-flagged-but-not-excluded items (`condition-003`, `observation-002/003`,
+  `medicationrequest-003`, `allergyintolerance-001/003` all correctly still absent).
+
+Not yet tested: "include items with discrepancies" toggle in isolation (only "include excluded" was
+toggle-tested independently); Download Output after a HIL merge has been applied (the button reads
+from `loadedBundle`/`validationReport`, which the merge step already replaces on success, so this
+should work by construction, but hasn't been exercised end-to-end as one combined flow).
+
+### Phase 02 — Iteration 07, step 5 refinement: HIL-mode gating + filename format
+
+Verified with `javascript_tool` DOM inspection (chosen over screenshots specifically because a
+native `title` tooltip only appears on hover, which a plain screenshot can't reliably capture) plus
+a real download read back from `~/Downloads`:
+
+- Default mode, sample bundle validated: `Download Output` button `disabled === true`, `title ===
+  "Download Output is available in HIL mode only."`; Download Options checkboxes absent from the
+  DOM entirely (not just `disabled`).
+- Switched to HIL mode (required loading a fresh file first, since the dropdown was already locked
+  from the Default-mode run above — confirms the existing Step 1 lock behavior is still correct),
+  before Run Validation: button `title === "Run Validation first."`.
+- After a real HIL-mode Run Validation: button `disabled === false`, `title === ""`; Download
+  Options checkboxes present in the DOM.
+- Clicked the real button, read the resulting file back from `~/Downloads`:
+  `fhir-r4-patient-record-2026-08-25-19-28-32.json` — exact match for the
+  `fhir-r4-patient-record-<yyyy>-<mm>-<dd>-<hh>-<mm>-<ss>.json` spec; content parses as a valid
+  `Bundle`/`collection` with `total === entry.length` (7).
+- Hit the session's known browser-click-timing flakiness twice during this check (Load Sample
+  File / Run Validation not registering on the very first click after a fresh navigation) — caught
+  both times by checking actual page/DOM state before trusting a click had worked, not by assuming
+  success from the tool call alone.
+
+### Phase 02 — Iteration 07, step 6: mode-change hint + User Guide
+
+- Confirmed via `javascript_tool` that the new inline hint ("To change validation mode,
+  load/upload a file.") is absent from the DOM before a validation report exists, and present
+  immediately after a successful Run Validation — matches the dropdown's actual lock state exactly
+  in both directions.
+- Real browser: `/` shows both `ProcessingWidget` and `UserGuideWidget`; clicking the User Guide
+  card navigates to `/user-guide` and renders all five documented sections; opening the hamburger
+  sidebar shows both "Patient Record Processing" and "User Guide" menu entries.
+- Confirmed the frontend Docker container compiled cleanly (no TS/build errors in `docker compose
+  logs frontend`) after each of this step's file changes, per the project's rebuild-and-check-logs
+  discipline.
+
 ## Automated coverage
 
 None yet. First candidates, once written:

@@ -418,6 +418,55 @@ discrepancies show the correct count — Conditions ⚠2, Allergies ⚠3, Observ
 (sums to the already-verified 18-discrepancy total for this bundle) — and correct singular grammar
 on patient-002's card (`⚠ 1 discrepancy`, not "discrepancies").
 
+**Final step: Download Output — a real, filtered FHIR bundle export.** `frontend/lib/
+downloadOutput.ts`'s `buildCleanOutputBundle(rawBundle, report, options)` cross-references the
+current working bundle's raw entries against `validationReport`'s per-item classification (same
+approach as `lib/reconcile.ts` — display types don't carry full resource content, so filtering has
+to happen against the raw bundle, not the display projection):
+- Every `Patient` resource is always kept.
+- A clinical resource is kept if: it's excluded → only when `includeExcluded`; else it has
+  discrepancies → only when `includeWithDiscrepancies`; else (clean) → always.
+- `page.tsx`'s `handleDownloadOutput()` builds the filtered bundle from `loadedBundle` +
+  `validationReport` (so it reflects a HIL merge if one was applied — no separate "post-merge"
+  code path needed) and triggers a client-side save (same `Blob` + `<a download>` pattern as
+  Download Sample File). Two checkboxes (`includeWithDiscrepancies`, `includeExcluded`), both
+  defaulting to `false`, so an unmodified download is genuinely clean.
+- **Refined per Aaron's follow-up feedback** ("Download Output only available in HIL mode... /
+  Download Options: should also be only visible in HIL mode. / download file name format
+  fhir-r4-patient-record-\<yyyy\>-\<mm\>-\<dd\>-\<hh\>-\<mm\>-\<ss\>.json"): the button is now
+  `disabled={validationMode !== "hil" || !validationReport}`, gated to HIL mode specifically
+  (not just "any report exists" as first built) — carries an explanatory `title` tooltip
+  ("Download Output is available in HIL mode only." / "Run Validation first.") in the disabled
+  states, matching the app's existing disabled-button idiom. The Download Options checkboxes are
+  wrapped in `{validationMode === "hil" && (...)}` and don't render at all outside HIL mode — not
+  just disabled. Filename is `fhir-r4-patient-record-<yyyy-mm-dd-hh-mm-ss>.json` via a small
+  `formatTimestampForFilename(date)` helper, timestamped to the moment of download.
+
+**Verified by actually downloading and reading the file back** (via `~/Downloads`), not just by
+inspecting the UI: default settings (both boxes unchecked) on the real bundle produced a 7-entry
+bundle — both patients plus exactly the 5 fully-clean clinical resources
+(`encounter-001`/`condition-001`/`observation-001`/`medicationrequest-001`/`medicationrequest-002`)
+— matching `total: 7` precisely. Toggling "include entries marked as Excluded" and re-downloading
+produced exactly `7 + 4 = 11` entries, the 4 new ones being precisely the previously-excluded set
+(`encounter-002`, `condition-002`, `observation-004`, `allergyintolerance-002`), confirming the two
+toggles are independent and don't leak into each other.
+
+**Step 6: mode-change discoverability hint + User Guide page.** Two small enhancements given live
+during Step 5 verification. First: the Validation Mode dropdown's lock (Step 1) was only explained
+via a hover-only `title` tooltip — `page.tsx` now also shows a plain inline text hint ("To change
+validation mode, load/upload a file.") next to the dropdown whenever `validationReport !== null`,
+supplementing rather than replacing the tooltip. Second: a new static `/user-guide` route
+(`app/user-guide/page.tsx`) documents all five current features in the order a user encounters
+them (load → mode → validate → HIL merge → download), linked from a new `UserGuideWidget` on the
+Dashboard (alongside the existing `ProcessingWidget`) and from a new `Sidebar` menu entry.
+
+**Also found (unrelated to this step's feature work, but consequential):** the repo-root
+`.gitignore`'s Python-template `lib/` rule (added for a Python venv `lib/` that was never actually
+created at repo root) was unintentionally also matching `frontend/lib/` — meaning
+`reconcile.ts`/`downloadOutput.ts` (Step 3 and Step 5's actual source) had never been tracked by
+git despite being real, working, already-reviewed files. Anchored to `/lib/` (repo-root only) so
+it stops shadowing `frontend/lib/`. See `Iteration-07.md` Step 6 for the full note.
+
 ### Layout (Iteration 01)
 
 - `AppShell` (client component, holds sidebar open/closed state) → composes `Header` + `Sidebar` +
@@ -431,8 +480,10 @@ on patient-002's card (`⚠ 1 discrepancy`, not "discrepancies").
 
 ### Pages
 
-- **`/` (Dashboard)** — heading + one `ProcessingWidget` card linking to
-  `/patient-record-processing`.
+- **`/` (Dashboard)** — heading + `ProcessingWidget` and `UserGuideWidget` cards, linking to
+  `/patient-record-processing` and `/user-guide` respectively (Iteration 07 Step 6).
+- **`/user-guide`** (Iteration 07 Step 6) — static content page, no client state; walks through
+  the five current features in the order a user encounters them.
 - **`/patient-record-processing`** (Iteration 02) — client component, local state only (no global
   state manager; not warranted at this scale):
   - `downloadState`, `loadState`: `"idle" | "loading" | "error"`.

@@ -1,4 +1,5 @@
 import ProcessingWidget from "@/components/dashboard/ProcessingWidget";
+import UserGuideWidget from "@/components/dashboard/UserGuideWidget";
 
 // Default landing page (`/`) per Iteration 01.
 export default function DashboardPage() {
@@ -7,8 +8,9 @@ export default function DashboardPage() {
       <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
       <p className="mt-1 text-slate-600">Centauri Clinical Snapshot — reconciliation tooling overview.</p>
 
-      <div className="mt-6">
+      <div className="mt-6 flex flex-wrap gap-4">
         <ProcessingWidget />
+        <UserGuideWidget />
       </div>
     </div>
   );
